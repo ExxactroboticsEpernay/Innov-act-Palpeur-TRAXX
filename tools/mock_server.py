@@ -23,9 +23,9 @@ SENSORS = ("front_left", "front_right", "rear_left", "rear_right")
 DEFAULT_CONFIG = {
     "activePairs": "front",
     "wheelbase": 3.85,
-    "pivotSpacing": 0.525,
-    "armLength": 0.35,
-    "contactLength": 0.35,
+    "pivotSpacing": 0.515,
+    "armLength": 0.395,
+    "contactLength": 0.395,
     "frontOffset": 0.4,
     "rearOffset": -0.4,
     "frontArmDirection": "forward",

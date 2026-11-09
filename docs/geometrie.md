@@ -122,6 +122,21 @@ Dans une évolution à deux paires, les trois références sont l'essieu arrièr
 
 Avec une séparation provisoire de 4,65 m et des erreurs de position opposées de 1,5 cm par paire, l'erreur différentielle maximale est 3 cm : `atan(0,03 / 4,65) ≈ 0,37°`. Ce calcul est un ordre de grandeur géométrique, pas une garantie de précision.
 
+## Montage mesuré : bras perpendiculaires au repos (à intégrer)
+
+Mesures sur table : `b = 0,515 m`, `L = 0,395 m`, croisement au repos 28,0 cm. Comme `2L − b = 27,5 cm`, les bras sont **perpendiculaires à la machine au repos** (`θ_repos ≈ 90°`) et se croisent au milieu. En avançant, un cep repousse les deux bras vers l'arrière.
+
+Ordres de grandeur (objet fin, contact en bout de bras) :
+
+- Plage où les deux bras touchent : `|y| ≤ L − b/2 ≈ 13,7 cm` (plus large pour un gros objet).
+- Rang centré : chaque bras est à environ 41° de l'axe x, soit environ 49° de déflexion depuis le repos.
+- Sensibilité au centre : environ 1,9°/cm, soit environ 42 mV/cm sur le capteur.
+
+Conséquences pour le code, **pas encore traitées** :
+
+1. `convertVoltageToAngle` donne un angle par rapport au milieu de course du capteur, et la géométrie l'utilise comme angle par rapport à l'axe x. Il faut introduire l'angle de repos géométrique et le sens de déflexion par capteur : `θ = θ_repos − déflexion`.
+2. Le cep glisse le long du bras pendant son passage : la distance de contact `c` varie. L'estimateur v1, qui suppose `c` fixe, est donc biaisé. L'estimateur v2 (bissectrice) ne dépend pas du point de contact; il devient le candidat naturel, à confirmer par simulation.
+
 ## Détection et qualité
 
 - Le contact d'un bras est détecté par écart à son neutre calibré, avec seuil et hystérésis configurables.
@@ -135,9 +150,9 @@ Avec une séparation provisoire de 4,65 m et des erreurs de position opposées d
 
 | Paramètre | Valeur de cadrage | État |
 |---|---:|---|
-| `pivot_spacing_m` | 0,525 m | À mesurer sur le montage |
-| `arm_length_m` | 0,35 m | Valeur nominale |
-| `contact_length_m` | 0,35 m | Hypothèse initiale, à affiner |
+| `pivot_spacing_m` | 0,515 m | Mesuré sur table (2026-11-09) |
+| `arm_length_m` | 0,395 m | Mesuré sur table (2026-11-09) |
+| `contact_length_m` | 0,395 m | = L par défaut; le contact glisse le long du bras, voir ci-dessous |
 | `arm_direction` | avant | À vérifier sur le montage |
 | `wheelbase_m` | 3,85 m | Provisoire, plage attendue 3,7–4,0 m |
 | `front_pair_offset_m` | +0,40 m | Choix communiqué |

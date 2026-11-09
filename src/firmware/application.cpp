@@ -52,9 +52,9 @@ int sensorOf(int pair, int side) { return pair * 2 + side; }
 
 struct AppConfig {
   float wheelbase_m = 3.85f;
-  float pivot_spacing_m = 0.525f;
-  float arm_length_m = 0.35f;
-  float contact_length_m = 0.35f;
+  float pivot_spacing_m = 0.515f;
+  float arm_length_m = 0.395f;
+  float contact_length_m = 0.395f;
   // Décalage signé du pivot par rapport à l'essieu correspondant.
   float pair_offset_m[kPairCount] = {0.40f, -0.40f};
   int arm_direction[kPairCount] = {1, 1};
@@ -185,9 +185,9 @@ void recreateChannels() {
 
 void loadConfig() {
   app_config.wheelbase_m = preferences.getFloat("wheelbase", 3.85f);
-  app_config.pivot_spacing_m = preferences.getFloat("spacing", 0.525f);
-  app_config.arm_length_m = preferences.getFloat("arm_len", 0.35f);
-  app_config.contact_length_m = preferences.getFloat("contact", 0.35f);
+  app_config.pivot_spacing_m = preferences.getFloat("spacing", 0.515f);
+  app_config.arm_length_m = preferences.getFloat("arm_len", 0.395f);
+  app_config.contact_length_m = preferences.getFloat("contact", 0.395f);
   app_config.pair_offset_m[kFront] = preferences.getFloat("front_off", 0.40f);
   app_config.pair_offset_m[kRear] = preferences.getFloat("rear_off", -0.40f);
   app_config.arm_direction[kFront] = preferences.getInt("arm_dir", 1);

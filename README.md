@@ -33,7 +33,9 @@ L'**ESP32 PLC 19R** est maintenant le candidat d'achat probable pour garder cett
 | Empattement | 3,85 m | Valeur provisoire à mesurer |
 | Distance entre paires | 4,65 m avec l'empattement provisoire | Calculée pour une éventuelle évolution, non utilisée dans le POC |
 | Voie de la machine | 1,16 m | Valeur communiquée, définition des points de mesure à confirmer |
-| Croisement des bras au repos | Environ 15 cm | Estimation à confirmer; ne remplace pas la calibration du neutre |
+| Entraxe des pivots `b` | 0,515 m | Mesuré sur table le 2026-11-09 |
+| Longueur des bras `L` | 0,395 m | Mesurée sur table le 2026-11-09 |
+| Croisement des bras au repos | 28,0 cm | Mesuré sur table; cohérent avec des bras perpendiculaires à la machine au repos (2L − b = 27,5 cm) |
 | PLC candidat | Industrial Shields ESP32 PLC 19R | Achat probable; référence et variante à confirmer |
 | Acquisition initiale | Deux capteurs pour une paire | Compatible avec les deux voies analogiques documentées pour le PLC du projet joystick |
 | Évolution éventuelle | Deuxième paire | À décider après essais; le 19R est le candidat, sous réserve de vérifier ses voies analogiques |

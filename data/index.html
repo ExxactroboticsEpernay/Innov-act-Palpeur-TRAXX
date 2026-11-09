@@ -345,9 +345,9 @@
               <div class="field"><label for="rearOffset"><span class="sym">d<sub>AR</sub></span>Décalage pivots / essieu arrière (m)</label><input id="rearOffset" name="rearOffset" type="number" step="0.01" min="-1.5" max="1.5" value="-0.40"><small>Négatif = derrière l’essieu.</small></div>
               <div class="field"><label for="rearArmDirection">Orientation des bras arrière</label><select id="rearArmDirection" name="rearArmDirection"><option value="forward" selected>Vers l’avant</option><option value="backward">Vers l’arrière</option></select></div>
               <div class="form-section-title">Montage commun aux deux paires</div>
-              <div class="field"><label for="pivotSpacing"><span class="sym">b</span>Entraxe des pivots (m)</label><input id="pivotSpacing" name="pivotSpacing" type="number" step="0.001" min="0.3" max="1.2" value="0.525"><small>Entre pivots gauche et droit d’une paire.</small></div>
-              <div class="field"><label for="armLength"><span class="sym">L</span>Longueur des bras (m)</label><input id="armLength" name="armLength" type="number" step="0.01" min="0.1" max="1.2" value="0.35"></div>
-              <div class="field"><label for="contactLength"><span class="sym">c</span>Longueur de contact effective (m)</label><input id="contactLength" name="contactLength" type="number" step="0.01" min="0.1" max="1.2" value="0.35"><small>Hypothèse initiale, à affiner au montage.</small></div>
+              <div class="field"><label for="pivotSpacing"><span class="sym">b</span>Entraxe des pivots (m)</label><input id="pivotSpacing" name="pivotSpacing" type="number" step="0.001" min="0.3" max="1.2" value="0.515"><small>Entre pivots gauche et droit d’une paire.</small></div>
+              <div class="field"><label for="armLength"><span class="sym">L</span>Longueur des bras (m)</label><input id="armLength" name="armLength" type="number" step="0.005" min="0.1" max="1.2" value="0.395"></div>
+              <div class="field"><label for="contactLength"><span class="sym">c</span>Longueur de contact effective (m)</label><input id="contactLength" name="contactLength" type="number" step="0.005" min="0.1" max="1.2" value="0.395"><small>Hypothèse initiale, à affiner au montage.</small></div>
               <div class="field"><label for="trackWidth"><span class="sym">V</span>Voie machine (m)</label><input id="trackWidth" name="trackWidth" type="number" step="0.01" min="0.5" max="3" value="1.16"><small>Affichage uniquement.</small></div>
               <div class="form-section-title">Estimateur et validité</div>
               <div class="field"><label for="estimator">Estimateur</label><select id="estimator" name="estimator"><option value="v1" selected>v1 · point de contact</option><option value="v2">v2 · bissectrice (à valider)</option></select></div>
@@ -562,7 +562,7 @@
         activePairs: "front", wheelbase: 3.85,
         frontOffset: 0.4, frontArmDirection: "forward",
         rearOffset: -0.4, rearArmDirection: "forward",
-        pivotSpacing: 0.525, armLength: 0.35, contactLength: 0.35, trackWidth: 1.16,
+        pivotSpacing: 0.515, armLength: 0.395, contactLength: 0.395, trackWidth: 1.16,
         estimator: "v1", contactThreshold: 3, hysteresis: 1, medianWindow: 5, publishRate: 50
       };
       const fields = Object.keys(defaults);

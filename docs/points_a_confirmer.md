@@ -15,8 +15,9 @@ Ce registre évite de transformer des hypothèses en caractéristiques matériel
 | Calibration firmware | Routes implémentées, non testées sur matériel | Neutre stable sur 2 s, balayage des butées sur 10 s et biais de centrage sont persistés en NVS; tester les seuils de stabilité et la procédure sur le PLC/capteurs réels. |
 | Brochage RTY180HVNAA | Non relevé dans ce dépôt | Utiliser le plan officiel Honeywell correspondant exactement au connecteur et à la variante N; ne pas déduire les couleurs de fils. |
 | Empattement | 3,85 m provisoire | Mesurer sur le TRAXX; la distance entre paires calculée à 4,65 m changera avec cette mesure. |
-| Entraxe des pivots | 0,525 m provisoire | Mesurer après montage. La voie de 1,16 m n'est pas l'entraxe des pivots. |
-| Croisement mécanique | Environ 15 cm, estimation utilisateur | Préciser comment la mesure est prise. L'angle de repos vient de la calibration. |
+| Entraxe des pivots | 0,515 m mesuré sur table | Revérifier une fois monté sur le TRAXX. La voie de 1,16 m n'est pas l'entraxe des pivots. |
+| Longueur des bras | 0,395 m mesurée sur table | Dimension modifiable si l'étude montre un meilleur compromis. |
+| Croisement mécanique | 28,0 cm mesuré sur table | 2L − b = 27,5 cm : bras perpendiculaires à la machine au repos. **Bloquant** : le firmware suppose aujourd'hui que le milieu de course du capteur correspond à un bras parallèle à la machine; il manque l'angle de repos et le sens de déflexion (voir géométrie). |
 | Voie | 1,16 m communiquée | Confirmer les points de mesure si la valeur est utilisée dans l'affichage. |
 | Bus CAN TRAXX | IDs et bitrate inconnus | Obtenir la liste d'IDs occupés, le bitrate et l'accord du propriétaire du bus. CAN reste désactivé. |
 | Carte CAN sur le PLC | Inconnue | Confirmer matériel/transceiver avant de choisir une implémentation physique. |
