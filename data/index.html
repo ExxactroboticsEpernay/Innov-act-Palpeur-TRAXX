@@ -187,6 +187,53 @@
     .state-pill.off { color: var(--muted); background: #edf0ec; }
     .sensor-cell.off, tr.off td { opacity: .45; }
     .metric-value.small-value { font-size: 20px; }
+    /* Paramètres : formulaire à gauche, schéma de mesure à droite */
+    .settings-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 14px; align-items: start; }
+    .settings-side { display: grid; gap: 14px; }
+    .diagram-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: start; }
+    .diagram { display: block; width: 100%; height: auto; background: var(--panel-soft); border: 1px solid var(--line); border-radius: 6px; }
+    .diagram text { font: 600 11px var(--sans); fill: var(--ink-soft); }
+    .diagram .dg-caption { font-size: 9.5px; fill: var(--muted); letter-spacing: .05em; }
+    .diagram .dg-small { font-size: 9.5px; fill: var(--muted); }
+    .diagram .dg-center { font-size: 10px; fill: #35443b; text-anchor: middle; }
+    .diagram .dg-green { fill: var(--green); }
+    .diagram .dg-row { stroke: #33815a; stroke-width: 2; stroke-dasharray: 7 5; }
+    .diagram .dg-body { fill: rgba(51, 68, 59, .09); stroke: #41534a; stroke-width: 1.2; }
+    .diagram .dg-wheel rect { fill: #1c2822; }
+    .diagram .dg-axle { stroke: #41534a; stroke-width: 1; stroke-dasharray: 3 3; }
+    .diagram .dg-axis { stroke: var(--blue); stroke-width: 1.4; }
+    .diagram .dg-origin { fill: var(--blue); }
+    .diagram .dg-axis-label { font: 700 10px var(--mono); fill: var(--blue); }
+    .diagram .dg-pivot { fill: var(--orange); }
+    .diagram .dg-arms line { stroke: var(--orange); stroke-width: 3; stroke-linecap: round; }
+    .diagram .dg-ref { stroke: #9aa39c; stroke-width: 1; stroke-dasharray: 3 3; }
+    .diagram .dg-object { fill: #d6eadc; stroke: #33815a; stroke-width: 1.2; }
+    .diagram .dg-contact { fill: var(--ink); }
+    .diagram .dim line, .diagram .dim path { stroke: #7d8880; stroke-width: 1.1; fill: none; }
+    .diagram .dim line.ext { stroke: #b5bdb6; stroke-width: .8; }
+    .diagram .dim circle { fill: #7d8880; }
+    .diagram .dim .dg-cseg { stroke: rgba(40, 103, 167, .16); stroke-width: 8; stroke-linecap: round; }
+    .diagram .dg-sym { font: 700 12px var(--mono); fill: var(--ink); }
+    .diagram .dg-val { font: 600 10px var(--mono); fill: var(--muted); }
+    .diagram .hl.active line, .diagram .hl.active path { stroke: var(--blue); stroke-width: 2; }
+    .diagram .hl.active line.ext { stroke: var(--blue); stroke-width: 1; }
+    .diagram .hl.active .dg-cseg { stroke: rgba(40, 103, 167, .5); stroke-width: 8; }
+    .diagram .dg-arms.active line { stroke: var(--blue); stroke-width: 3.5; }
+    .diagram .hl.active text, .diagram .hl.active tspan { fill: var(--blue); }
+    .diagram .hl.active circle { fill: var(--blue); }
+    .diagram .hl[data-param] { cursor: pointer; }
+    .sym { display: inline-block; min-width: 22px; margin-right: 6px; padding: 1px 5px; color: var(--blue); background: var(--blue-soft); border-radius: 4px; font: 700 10px var(--mono); text-align: center; vertical-align: 1px; }
+    .sym sub { font-size: 7.5px; }
+    .measure-list { display: grid; gap: 1px; margin: 12px 0 0; padding: 0; list-style: none; }
+    .measure-list li { display: flex; align-items: flex-start; gap: 4px; padding: 6px 8px; border-radius: 5px; color: var(--ink-soft); font-size: 11px; cursor: pointer; }
+    .measure-list li .sym { flex: none; }
+    .measure-list li strong { color: var(--ink); }
+    .measure-list li:hover, .measure-list li.active { background: var(--blue-soft); }
+    @media (max-width: 900px) {
+      .settings-layout { grid-template-columns: 1fr; }
+      .settings-side { order: -1; }
+    }
+    @media (max-width: 620px) { .diagram-grid { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -283,28 +330,28 @@
 
     <section class="view" id="view-settings" role="tabpanel" hidden>
       <div class="view-head"><div><p class="eyebrow">Configuration</p><h1>Paramètres</h1><p class="view-desc" id="settingsDesc">Conservés dans ce navigateur et envoyés au PLC s’il est connecté.</p></div></div>
-      <div class="split-layout">
+      <div class="settings-layout">
         <div class="panel">
           <div class="panel-heading"><div><h2>Géométrie et acquisition</h2><p>Repère : origine au centre de l’essieu arrière, x vers l’avant.</p></div></div>
           <form id="settingsForm">
             <div class="form-grid">
               <div class="form-section-title">Paires de palpeurs</div>
               <div class="field"><label for="activePairs">Paires actives</label><select id="activePairs" name="activePairs"><option value="front" selected>1 paire · avant</option><option value="rear">1 paire · arrière</option><option value="both">2 paires · avant + arrière</option></select><small>Avec 1 paire : décalage local, cap indisponible. Avec 2 paires : cap et décalages aux essieux.</small></div>
-              <div class="field"><label for="wheelbase">Empattement (m)</label><input id="wheelbase" name="wheelbase" type="number" step="0.01" min="2" max="6" value="3.85"><small>Provisoire, à mesurer sur le TRAXX.</small></div>
+              <div class="field"><label for="wheelbase"><span class="sym">W</span>Empattement (m)</label><input id="wheelbase" name="wheelbase" type="number" step="0.01" min="2" max="6" value="3.85"><small>Provisoire, à mesurer sur le TRAXX.</small></div>
               <div class="form-section-title">Paire avant</div>
-              <div class="field"><label for="frontOffset">Décalage pivot / essieu avant (m)</label><input id="frontOffset" name="frontOffset" type="number" step="0.01" min="-1.5" max="1.5" value="0.40"><small>Positif = devant l’essieu.</small></div>
+              <div class="field"><label for="frontOffset"><span class="sym">d<sub>AV</sub></span>Décalage pivots / essieu avant (m)</label><input id="frontOffset" name="frontOffset" type="number" step="0.01" min="-1.5" max="1.5" value="0.40"><small>Positif = devant l’essieu.</small></div>
               <div class="field"><label for="frontArmDirection">Orientation des bras avant</label><select id="frontArmDirection" name="frontArmDirection"><option value="forward" selected>Vers l’avant</option><option value="backward">Vers l’arrière</option></select></div>
               <div class="form-section-title">Paire arrière</div>
-              <div class="field"><label for="rearOffset">Décalage pivot / essieu arrière (m)</label><input id="rearOffset" name="rearOffset" type="number" step="0.01" min="-1.5" max="1.5" value="-0.40"><small>Négatif = derrière l’essieu.</small></div>
+              <div class="field"><label for="rearOffset"><span class="sym">d<sub>AR</sub></span>Décalage pivots / essieu arrière (m)</label><input id="rearOffset" name="rearOffset" type="number" step="0.01" min="-1.5" max="1.5" value="-0.40"><small>Négatif = derrière l’essieu.</small></div>
               <div class="field"><label for="rearArmDirection">Orientation des bras arrière</label><select id="rearArmDirection" name="rearArmDirection"><option value="forward" selected>Vers l’avant</option><option value="backward">Vers l’arrière</option></select></div>
               <div class="form-section-title">Montage commun aux deux paires</div>
-              <div class="field"><label for="pivotSpacing">Entraxe des pivots (m)</label><input id="pivotSpacing" name="pivotSpacing" type="number" step="0.001" min="0.3" max="1.2" value="0.525"><small>Entre pivots gauche et droit d’une paire.</small></div>
-              <div class="field"><label for="armLength">Longueur des bras (m)</label><input id="armLength" name="armLength" type="number" step="0.01" min="0.1" max="1.2" value="0.35"></div>
-              <div class="field"><label for="contactLength">Longueur de contact effective (m)</label><input id="contactLength" name="contactLength" type="number" step="0.01" min="0.1" max="1.2" value="0.35"><small>Hypothèse initiale, à affiner au montage.</small></div>
-              <div class="field"><label for="trackWidth">Voie machine (m)</label><input id="trackWidth" name="trackWidth" type="number" step="0.01" min="0.5" max="3" value="1.16"><small>Affichage uniquement.</small></div>
+              <div class="field"><label for="pivotSpacing"><span class="sym">b</span>Entraxe des pivots (m)</label><input id="pivotSpacing" name="pivotSpacing" type="number" step="0.001" min="0.3" max="1.2" value="0.525"><small>Entre pivots gauche et droit d’une paire.</small></div>
+              <div class="field"><label for="armLength"><span class="sym">L</span>Longueur des bras (m)</label><input id="armLength" name="armLength" type="number" step="0.01" min="0.1" max="1.2" value="0.35"></div>
+              <div class="field"><label for="contactLength"><span class="sym">c</span>Longueur de contact effective (m)</label><input id="contactLength" name="contactLength" type="number" step="0.01" min="0.1" max="1.2" value="0.35"><small>Hypothèse initiale, à affiner au montage.</small></div>
+              <div class="field"><label for="trackWidth"><span class="sym">V</span>Voie machine (m)</label><input id="trackWidth" name="trackWidth" type="number" step="0.01" min="0.5" max="3" value="1.16"><small>Affichage uniquement.</small></div>
               <div class="form-section-title">Estimateur et validité</div>
               <div class="field"><label for="estimator">Estimateur</label><select id="estimator" name="estimator"><option value="v1" selected>v1 · point de contact</option><option value="v2">v2 · bissectrice (à valider)</option></select></div>
-              <div class="field"><label for="contactThreshold">Seuil de contact (°)</label><input id="contactThreshold" name="contactThreshold" type="number" step="0.5" min="1" max="30" value="3"></div>
+              <div class="field"><label for="contactThreshold"><span class="sym">θ</span>Seuil de contact (°)</label><input id="contactThreshold" name="contactThreshold" type="number" step="0.5" min="1" max="30" value="3"></div>
               <div class="field"><label for="hysteresis">Hystérésis (°)</label><input id="hysteresis" name="hysteresis" type="number" step="0.5" min="0" max="10" value="1"></div>
               <div class="field"><label for="medianWindow">Fenêtre médiane</label><input id="medianWindow" name="medianWindow" type="number" step="2" min="3" max="21" value="5"></div>
               <div class="field"><label for="publishRate">Fréquence publication (Hz)</label><input id="publishRate" name="publishRate" type="number" step="5" min="5" max="200" value="50"></div>
@@ -313,12 +360,122 @@
           </form>
           <p class="form-note">Après un changement de paires actives, refaire la calibration des capteurs nouvellement activés puis le centre.</p>
         </div>
+        <div class="settings-side">
+        <div class="panel">
+          <div class="panel-heading"><div><h2>Où prendre les mesures</h2><p>Cliquer dans un champ met sa cote en évidence sur le schéma.</p></div></div>
+          <div class="diagram-grid">
+            <!-- Vue machine : W, d_AV, d_AR, voie. Coordonnées : 80 px/m, avant en haut. -->
+            <svg class="diagram" viewBox="0 0 280 530" role="img" aria-label="Vue de dessus du TRAXX : empattement, position des paires et voie">
+              <defs><marker id="dgAxisArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#2867a7"/></marker></defs>
+              <text x="10" y="18" class="dg-caption">VUE DE DESSUS · AVANT ↑</text>
+              <line x1="150" y1="28" x2="150" y2="524" class="dg-row"/>
+              <text x="155" y="522" class="dg-small dg-green">rang</text>
+              <rect x="112" y="96" width="76" height="340" rx="8" class="dg-body"/>
+              <text x="150" y="270" class="dg-center">TRAXX</text>
+              <g class="dg-wheel"><rect x="96.6" y="92" width="14" height="40" rx="3"/><rect x="189.4" y="92" width="14" height="40" rx="3"/><rect x="96.6" y="400" width="14" height="40" rx="3"/><rect x="189.4" y="400" width="14" height="40" rx="3"/></g>
+              <line x1="103.6" y1="112" x2="196.4" y2="112" class="dg-axle"/>
+              <line x1="103.6" y1="420" x2="196.4" y2="420" class="dg-axle"/>
+              <text x="207" y="128" class="dg-small">essieu AV</text>
+              <text x="207" y="410" class="dg-small">essieu AR</text>
+              <!-- Origine du repère : centre de l'essieu arrière -->
+              <line x1="150" y1="420" x2="150" y2="390" class="dg-axis" marker-end="url(#dgAxisArrow)"/>
+              <line x1="150" y1="420" x2="122" y2="420" class="dg-axis" marker-end="url(#dgAxisArrow)"/>
+              <circle cx="150" cy="420" r="3" class="dg-origin"/>
+              <text x="154" y="394" class="dg-axis-label">x</text>
+              <text x="118" y="414" class="dg-axis-label">y</text>
+              <text x="154" y="434" class="dg-axis-label">O</text>
+              <!-- Paires (bras retournés par JS si orientés vers l'arrière) -->
+              <g id="dgPair-front" class="hl" data-param="activePairs">
+                <g id="dgArms-front" class="hl dg-arms" data-param="frontArmDirection"><line x1="129" y1="80" x2="151.9" y2="63.9"/><line x1="171" y1="80" x2="148.1" y2="63.9"/></g>
+                <circle cx="129" cy="80" r="3.5" class="dg-pivot"/><circle cx="171" cy="80" r="3.5" class="dg-pivot"/>
+                <text x="10" y="84" class="dg-small">paire AV</text>
+              </g>
+              <g id="dgPair-rear" class="hl" data-param="activePairs">
+                <g id="dgArms-rear" class="hl dg-arms" data-param="rearArmDirection"><line x1="129" y1="452" x2="151.9" y2="435.9"/><line x1="171" y1="452" x2="148.1" y2="435.9"/></g>
+                <circle cx="129" cy="452" r="3.5" class="dg-pivot"/><circle cx="171" cy="452" r="3.5" class="dg-pivot"/>
+                <text x="10" y="456" class="dg-small">paire AR</text>
+              </g>
+              <!-- Cotes -->
+              <g class="hl dim" data-param="trackWidth">
+                <line x1="103.6" y1="90" x2="103.6" y2="36" class="ext"/><line x1="196.4" y1="90" x2="196.4" y2="36" class="ext"/>
+                <line x1="103.6" y1="42" x2="196.4" y2="42"/><line x1="99.6" y1="46" x2="107.6" y2="38"/><line x1="192.4" y1="46" x2="200.4" y2="38"/>
+                <text x="96" y="46" class="dg-sym" text-anchor="end">V</text>
+                <text x="204" y="46" class="dg-val" data-value="trackWidth">1,16 m</text>
+              </g>
+              <g class="hl dim" data-param="wheelbase">
+                <line x1="96" y1="112" x2="34" y2="112" class="ext"/><line x1="96" y1="420" x2="34" y2="420" class="ext"/>
+                <line x1="40" y1="112" x2="40" y2="420"/><line x1="36" y1="116" x2="44" y2="108"/><line x1="36" y1="424" x2="44" y2="416"/>
+                <text x="47" y="262" class="dg-sym">W</text>
+                <text x="47" y="276" class="dg-val" data-value="wheelbase">3,85 m</text>
+              </g>
+              <g class="hl dim" data-param="frontOffset">
+                <line x1="176" y1="80" x2="228" y2="80" class="ext"/><line x1="207" y1="112" x2="228" y2="112" class="ext"/>
+                <line x1="222" y1="80" x2="222" y2="112"/><line x1="218" y1="84" x2="226" y2="76"/><line x1="218" y1="116" x2="226" y2="108"/>
+                <text x="230" y="93" class="dg-sym">d<tspan dy="3" font-size="8">AV</tspan></text>
+                <text x="230" y="107" class="dg-val" data-value="frontOffset">+0,40 m</text>
+              </g>
+              <g class="hl dim" data-param="rearOffset">
+                <line x1="176" y1="452" x2="228" y2="452" class="ext"/><line x1="207" y1="420" x2="228" y2="420" class="ext"/>
+                <line x1="222" y1="420" x2="222" y2="452"/><line x1="218" y1="424" x2="226" y2="416"/><line x1="218" y1="456" x2="226" y2="448"/>
+                <text x="230" y="433" class="dg-sym">d<tspan dy="3" font-size="8">AR</tspan></text>
+                <text x="230" y="447" class="dg-val" data-value="rearOffset">−0,40 m</text>
+              </g>
+            </svg>
+            <!-- Détail d'une paire : b, L, c, θ. Coordonnées : 360 px/m. -->
+            <svg class="diagram" viewBox="0 0 280 340" role="img" aria-label="Détail d'une paire de palpeurs : entraxe b, longueur L, contact c, angle θ">
+              <text x="10" y="18" class="dg-caption">DÉTAIL D’UNE PAIRE · AVANT ↑</text>
+              <line x1="140" y1="28" x2="140" y2="200" class="dg-row"/>
+              <text x="144" y="40" class="dg-small dg-green">rang</text>
+              <line x1="45.5" y1="270" x2="45.5" y2="168" class="dg-ref"/>
+              <text x="49" y="174" class="dg-small">axe x (θ = 0°)</text>
+              <circle cx="140" cy="222" r="14" class="dg-object"/>
+              <text x="150" y="250" class="dg-small">cep</text>
+              <g class="dg-arms"><line x1="45.5" y1="270" x2="148.7" y2="197.7"/><line x1="234.5" y1="270" x2="131.3" y2="197.7"/></g>
+              <circle cx="131.5" cy="209.7" r="2.6" class="dg-contact"/><circle cx="148.5" cy="209.7" r="2.6" class="dg-contact"/>
+              <circle cx="45.5" cy="270" r="4.5" class="dg-pivot"/><circle cx="234.5" cy="270" r="4.5" class="dg-pivot"/>
+              <text x="52" y="292" class="dg-small">pivot G (axe capteur)</text>
+              <text x="228" y="292" class="dg-small" text-anchor="end">pivot D</text>
+              <g class="hl dim" data-param="contactThreshold">
+                <path d="M45.5 236 A34 34 0 0 1 73.3 250.5"/>
+                <text x="58" y="231" class="dg-sym">θ</text>
+              </g>
+              <g class="hl dim" data-param="contactLength">
+                <line x1="45.5" y1="270" x2="131.5" y2="209.7" class="dg-cseg"/>
+                <text x="94" y="254" class="dg-sym">c</text>
+                <text x="94" y="267" class="dg-val" data-value="contactLength">0,35 m</text>
+              </g>
+              <g class="hl dim" data-param="armLength">
+                <line x1="234.5" y1="270" x2="245.4" y2="254.4" class="ext"/><line x1="131.3" y1="197.7" x2="142.2" y2="182.1" class="ext"/>
+                <line x1="243.7" y1="256.9" x2="140.5" y2="184.6"/><circle cx="243.7" cy="256.9" r="2"/><circle cx="140.5" cy="184.6" r="2"/>
+                <text x="196" y="208" class="dg-sym">L</text>
+                <text x="208" y="208" class="dg-val" data-value="armLength">0,35 m</text>
+              </g>
+              <g class="hl dim" data-param="pivotSpacing">
+                <line x1="45.5" y1="277" x2="45.5" y2="311" class="ext"/><line x1="234.5" y1="277" x2="234.5" y2="311" class="ext"/>
+                <line x1="45.5" y1="305" x2="234.5" y2="305"/><line x1="41.5" y1="309" x2="49.5" y2="301"/><line x1="230.5" y1="309" x2="238.5" y2="301"/>
+                <text x="140" y="325" class="dg-sym" text-anchor="middle">b <tspan class="dg-val" data-value="pivotSpacing">0,525 m</tspan></text>
+              </g>
+            </svg>
+          </div>
+          <ol class="measure-list">
+            <li data-param="wheelbase"><span class="sym">W</span><div><strong>Empattement</strong> · centre de la roue avant → centre de la roue arrière, du même côté, roues droites.</div></li>
+            <li data-param="frontOffset"><span class="sym">d<sub>AV</sub></span><div><strong>Pivots avant / essieu avant</strong> · le long de la machine, de l’axe de l’essieu avant à l’axe des capteurs avant. + devant l’essieu, − derrière.</div></li>
+            <li data-param="rearOffset"><span class="sym">d<sub>AR</sub></span><div><strong>Pivots arrière / essieu arrière</strong> · de l’axe de l’essieu arrière à l’axe des capteurs arrière. − derrière l’essieu, + devant.</div></li>
+            <li data-param="pivotSpacing"><span class="sym">b</span><div><strong>Entraxe des pivots</strong> · axe du capteur gauche → axe du capteur droit d’une même paire, perpendiculairement à la machine.</div></li>
+            <li data-param="armLength"><span class="sym">L</span><div><strong>Longueur de bras</strong> · axe du capteur → extrémité du bras.</div></li>
+            <li data-param="contactLength"><span class="sym">c</span><div><strong>Contact effectif</strong> · axe du capteur → zone où le bras frotte les ceps (repérer l’usure). Laisser c = L à défaut.</div></li>
+            <li data-param="trackWidth"><span class="sym">V</span><div><strong>Voie</strong> · milieu du pneu gauche → milieu du pneu droit. Sert seulement à l’affichage.</div></li>
+            <li data-param="contactThreshold"><span class="sym">θ</span><div><strong>Angle de bras</strong> · lu par le capteur, rien à mesurer. 0° = bras parallèle à la machine, positif vers l’intérieur ; le neutre vient de la calibration.</div></li>
+          </ol>
+          <p class="form-note">Machine sur sol plat, roues droites, bras au repos. Toujours mesurer d’axe à axe (centres de rotation), à ±1 cm près. Les cotes W, d<sub>AV</sub> et d<sub>AR</sub> comptent surtout pour le cap (mode 2 paires).</p>
+        </div>
         <div class="panel">
           <div class="panel-heading"><div><h2>Connexion matériel</h2><p>ESP32 PLC 19R envisagé · référence et variante analogique à confirmer.</p></div></div>
           <div class="field"><label for="wifiMode">Mode Wi-Fi</label><select id="wifiMode" disabled><option>Point d’accès du PLC</option><option>Client / STA</option></select></div>
           <div class="field" style="margin-top:12px"><label for="wifiName">Nom du réseau</label><input id="wifiName" value="PALPEUR-TRAXX" disabled></div>
           <div class="field" style="margin-top:12px"><label for="sampleFrequency">Rafraîchissement IHM cible</label><input id="sampleFrequency" value="20 Hz" disabled></div>
           <p class="footer-note">Deux paires exigent quatre entrées analogiques 0–10 V utilisables avec le Wi-Fi. Une voie non câblée apparaît en défaut capteur.</p>
+        </div>
         </div>
       </div>
     </section>
@@ -485,7 +642,42 @@
           const input = document.querySelector(`[name="${name}"]`);
           if (input && config[name] !== undefined) input.value = config[name];
         });
+        updateDiagram();
       }
+
+      // ---------- Schéma « Où prendre les mesures » ----------
+      // Les cotes affichent les valeurs du formulaire (même non enregistrées).
+      const diagramFormats = { wheelbase: [2, false], frontOffset: [2, true], rearOffset: [2, true], trackWidth: [2, false], pivotSpacing: [3, false], armLength: [2, false], contactLength: [2, false] };
+      function updateDiagram() {
+        const formValue = (name) => document.querySelector(`[name="${name}"]`)?.value;
+        Object.entries(diagramFormats).forEach(([name, [digits, showSign]]) => {
+          const value = Number(formValue(name));
+          const text = Number.isFinite(value)
+            ? `${showSign && value >= 0 ? "+" : ""}${value.toFixed(digits).replace(".", ",").replace("-", "−")} m`
+            : "—";
+          document.querySelectorAll(`[data-value="${name}"]`).forEach((node) => { node.textContent = text; });
+        });
+        const active = formValue("activePairs");
+        [["front", 80], ["rear", 452]].forEach(([pair, pivotY]) => {
+          $(`dgPair-${pair}`).style.opacity = active === "both" || active === pair ? "1" : "0.28";
+          // Bras vers l'arrière : symétrie autour de l'axe des pivots.
+          const backward = formValue(`${pair}ArmDirection`) === "backward";
+          $(`dgArms-${pair}`).setAttribute("transform", backward ? `matrix(1 0 0 -1 0 ${2 * pivotY})` : "");
+        });
+      }
+      function highlightParam(name) {
+        document.querySelectorAll(".diagram .hl[data-param], .measure-list li[data-param]")
+          .forEach((node) => node.classList.toggle("active", Boolean(name) && node.dataset.param === name));
+      }
+      $("settingsForm").addEventListener("input", updateDiagram);
+      $("settingsForm").addEventListener("change", updateDiagram);
+      $("settingsForm").addEventListener("focusin", (event) => highlightParam(event.target.name));
+      $("settingsForm").addEventListener("focusout", () => highlightParam(null));
+      document.querySelectorAll(".diagram .hl[data-param], .measure-list li[data-param]").forEach((node) => {
+        node.addEventListener("mouseenter", () => highlightParam(node.dataset.param));
+        node.addEventListener("mouseleave", () => highlightParam(document.activeElement?.name || null));
+        node.addEventListener("click", () => document.querySelector(`[name="${node.dataset.param}"]`)?.focus());
+      });
 
       // ---------- Simulateur de page (même modèle que tools/mock_server.py) ----------
       function simulatedPair(pair, rowY, t) {
