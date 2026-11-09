@@ -8,7 +8,7 @@ Ce registre évite de transformer des hypothèses en caractéristiques matériel
 | Référence exacte du PLC TRAXX | ESP32 PLC 19R envisagé | Achat probable. Confirmer référence complète, révision, variante analogique, alimentation et options avant commande/raccordement. |
 | Nombre d'entrées analogiques | À vérifier sur le PLC du TRAXX | Le projet joystick pour PLC 14 `013000010001` documente deux entrées analogiques utilisables, suffisantes pour le POC à une paire. Vérifier la référence et la fiche officielle. |
 | Entrées du 19R | À vérifier avant achat | Confirmer quatre voies analogiques 0–10 V utilisables simultanément avec le Wi-Fi, leur brochage et si elles sont sur ADC1. Ne pas déduire ces propriétés du seul nom « 19R ». |
-| Orientation des bras arrière | `forward` par défaut, paramétrable par paire | Confirmer si les bras de la paire arrière pointent vers l'avant ou vers l'arrière. |
+| Angle de repos des bras | 90° (perpendiculaires, 2 ressorts de rappel) — confirmé | Repoussés vers l'arrière en marche avant, libres vers l'avant en marche arrière. Réglable par paire (`frontRestAngle`, `rearRestAngle`). |
 | Entraxe des pivots arrière | Supposé identique à l'avant | Le paramètre `pivotSpacing` est commun aux deux paires; le séparer si le montage arrière diffère. |
 | Évolution à deux paires | Logiciel prêt (1 ou 2 paires au choix); matériel 19R candidat | Si les essais montrent qu'un cap est nécessaire, vérifier que le 19R commandé accepte quatre capteurs; sinon choisir une autre référence de PLC. Pas d'extension analogique prévue à ce stade. |
 | Chaîne Arduino CLI pour 19R | À vérifier | Confirmer que le paquet Industrial Shields utilisé par le joystick inclut la cible exacte du 19R et ses options de partition OTA. |
@@ -18,7 +18,7 @@ Ce registre évite de transformer des hypothèses en caractéristiques matériel
 | Encombrement palpeurs | b = 0,515 m dans un jambage de 0,59 m | Environ 3,7 cm de marge de chaque côté entre pivot et jambage : vérifier au montage que bras et capteurs ne touchent pas les jambes. |
 | Entraxe des pivots | 0,515 m mesuré sur table | Revérifier une fois monté sur le TRAXX. La voie de 1,16 m n'est pas l'entraxe des pivots. |
 | Longueur des bras | 0,395 m mesurée sur table | Dimension modifiable si l'étude montre un meilleur compromis. |
-| Croisement mécanique | 28,0 cm mesuré sur table | 2L − b = 27,5 cm : bras perpendiculaires à la machine au repos. **Bloquant** : le firmware suppose aujourd'hui que le milieu de course du capteur correspond à un bras parallèle à la machine; il manque l'angle de repos et le sens de déflexion (voir géométrie). |
+| Croisement mécanique | 28,0 cm mesuré sur table | 2L − b = 27,5 cm : bras perpendiculaires à la machine au repos. Pris en compte : angle de repos θ0 = 90° et sens appris à la calibration. Vérifier que le neutre de chaque capteur laisse au moins 60° de course vers l'arrière (affiché à l'étape « Sens »). |
 | Voie | 1,16 m communiquée | Confirmer les points de mesure si la valeur est utilisée dans l'affichage. |
 | Bus CAN TRAXX | IDs et bitrate inconnus | Obtenir la liste d'IDs occupés, le bitrate et l'accord du propriétaire du bus. CAN reste désactivé. |
 | Carte CAN sur le PLC | Inconnue | Confirmer matériel/transceiver avant de choisir une implémentation physique. |

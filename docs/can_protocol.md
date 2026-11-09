@@ -48,8 +48,8 @@ Bits `ValidityFlags` : bit 0 pose latérale valide; bit 1 cap valide (toujours �
 
 | Bits | Signal | Type / facteur | Unité | Description |
 |---:|---|---|---|---|
-| 0–15 | `AngleLeft` | `int16`, 0,01 | deg | Angle filtré bras gauche |
-| 16–31 | `AngleRight` | `int16`, 0,01 | deg | Angle filtré bras droit |
+| 0–15 | `AngleLeft` | `int16`, 0,01 | deg | Balayage filtré bras gauche (0 au repos, + vers l’arrière) |
+| 16–31 | `AngleRight` | `int16`, 0,01 | deg | Balayage filtré bras droit (0 au repos, + vers l’arrière) |
 | 32 | `LeftContact` | `uint1` | — | Contact gauche détecté |
 | 33 | `RightContact` | `uint1` | — | Contact droit détecté |
 | 34 | `PairValid` | `uint1` | — | Paire exploitable |

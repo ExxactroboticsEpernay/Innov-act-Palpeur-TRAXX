@@ -132,7 +132,7 @@
     .check-row input { width: 16px; height: 16px; accent-color: var(--green); }
     .form-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
     .form-note { margin: 12px 0 0; padding: 10px 11px; color: #5e4d34; background: #fbf4e7; border-left: 3px solid #d5a657; font-size: 11px; }
-    .cal-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0 0 17px; }
+    .cal-steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 0 0 17px; }
     .cal-step { padding: 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel-soft); }
     .cal-step strong { display: block; font-size: 11px; }
     .cal-step span { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; }
@@ -207,6 +207,8 @@
     .diagram .dg-pivot { fill: var(--orange); }
     .diagram .dg-arms line { stroke: var(--orange); stroke-width: 3; stroke-linecap: round; }
     .diagram .dg-ref { stroke: #9aa39c; stroke-width: 1; stroke-dasharray: 3 3; }
+    .diagram .dg-ghost { stroke: var(--orange); stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 4 4; opacity: .45; }
+    .diagram .hl.active .dg-ghost { stroke: var(--blue); opacity: .9; }
     .diagram .dg-object { fill: #d6eadc; stroke: #33815a; stroke-width: 1.2; }
     .diagram .dg-contact { fill: var(--ink); }
     .diagram .dim line, .diagram .dim path { stroke: #7d8880; stroke-width: 1.1; fill: none; }
@@ -290,7 +292,7 @@
             <div class="pair-state" id="pairBlock-rear"><div><div class="pair-name">Paire arrière</div><div class="pair-meta" id="pairMeta-rear">—</div></div><span class="state-pill off" id="pairPill-rear"><i class="dot"></i>—</span></div>
           </div>
           <div class="panel">
-            <div class="panel-heading"><div><h2>Mesures live</h2><p>Angles filtrés et tensions</p></div><span class="section-label">50 Hz cible</span></div>
+            <div class="panel-heading"><div><h2>Mesures live</h2><p>Balayage filtré (0 = repos, + vers l’arrière) et tension</p></div><span class="section-label">50 Hz cible</span></div>
             <div class="sensor-mini">
               <div class="sensor-cell" id="liveCell-front_left"><div class="sensor-title">AV GAUCHE</div><div class="sensor-reading" id="liveAngle-front_left">—</div><div class="sensor-detail" id="liveDetail-front_left">—</div></div>
               <div class="sensor-cell" id="liveCell-front_right"><div class="sensor-title">AV DROIT</div><div class="sensor-reading" id="liveAngle-front_right">—</div><div class="sensor-detail" id="liveDetail-front_right">—</div></div>
@@ -314,8 +316,8 @@
     <section class="view" id="view-sensors" role="tabpanel" hidden>
       <div class="view-head"><div><p class="eyebrow">Acquisition · quatre voies</p><h1>Capteurs</h1><p class="view-desc">Les voies d’une paire désactivée ne sont pas lues.</p></div></div>
       <div class="panel">
-        <div class="panel-heading"><div><h2>État des voies analogiques</h2><p id="sensorsSource">Tensions simulées.</p></div></div>
-        <div class="table-scroll"><table><thead><tr><th>Capteur</th><th>Tension</th><th>Angle brut</th><th>Angle filtré</th><th>Contact</th><th>Défaut</th></tr></thead><tbody>
+        <div class="panel-heading"><div><h2>État des voies analogiques</h2><p id="sensorsSource">Tensions simulées.</p><p>Balayage : 0 au repos, + bras repoussé vers l’arrière.</p></div></div>
+        <div class="table-scroll"><table><thead><tr><th>Capteur</th><th>Tension</th><th>Balayage brut</th><th>Balayage filtré</th><th>Contact</th><th>Défaut</th></tr></thead><tbody>
           <tr id="row-front_left"><td><span class="sensor-name">Avant gauche</span><br><span class="subtle-text">Voie 0</span></td><td class="number" id="tv-front_left">—</td><td class="number" id="traw-front_left">—</td><td class="number" id="tfilt-front_left">—</td><td id="tcontact-front_left">—</td><td id="tfault-front_left">—</td></tr>
           <tr id="row-front_right"><td><span class="sensor-name">Avant droit</span><br><span class="subtle-text">Voie 1</span></td><td class="number" id="tv-front_right">—</td><td class="number" id="traw-front_right">—</td><td class="number" id="tfilt-front_right">—</td><td id="tcontact-front_right">—</td><td id="tfault-front_right">—</td></tr>
           <tr id="row-rear_left"><td><span class="sensor-name">Arrière gauche</span><br><span class="subtle-text">Voie 2</span></td><td class="number" id="tv-rear_left">—</td><td class="number" id="traw-rear_left">—</td><td class="number" id="tfilt-rear_left">—</td><td id="tcontact-rear_left">—</td><td id="tfault-rear_left">—</td></tr>
@@ -340,10 +342,10 @@
               <div class="field"><label for="wheelbase"><span class="sym">W</span>Empattement (m)</label><input id="wheelbase" name="wheelbase" type="number" step="0.01" min="2" max="6" value="2.14"><small>TRAXX vignes étroites : 2,14 m (fiche constructeur).</small></div>
               <div class="form-section-title">Paire avant</div>
               <div class="field"><label for="frontOffset"><span class="sym">d<sub>AV</sub></span>Décalage pivots / essieu avant (m)</label><input id="frontOffset" name="frontOffset" type="number" step="0.01" min="-1.5" max="1.5" value="0.40"><small>Positif = devant l’essieu.</small></div>
-              <div class="field"><label for="frontArmDirection">Orientation des bras avant</label><select id="frontArmDirection" name="frontArmDirection"><option value="forward" selected>Vers l’avant</option><option value="backward">Vers l’arrière</option></select></div>
+              <div class="field"><label for="frontRestAngle"><span class="sym">θ<sub>0</sub></span>Angle des bras avant au repos (°)</label><input id="frontRestAngle" name="frontRestAngle" type="number" step="1" min="0" max="180" value="90"><small>90 = perpendiculaires à la machine.</small></div>
               <div class="form-section-title">Paire arrière</div>
               <div class="field"><label for="rearOffset"><span class="sym">d<sub>AR</sub></span>Décalage pivots / essieu arrière (m)</label><input id="rearOffset" name="rearOffset" type="number" step="0.01" min="-1.5" max="1.5" value="-0.40"><small>Négatif = derrière l’essieu.</small></div>
-              <div class="field"><label for="rearArmDirection">Orientation des bras arrière</label><select id="rearArmDirection" name="rearArmDirection"><option value="forward" selected>Vers l’avant</option><option value="backward">Vers l’arrière</option></select></div>
+              <div class="field"><label for="rearRestAngle"><span class="sym">θ<sub>0</sub></span>Angle des bras arrière au repos (°)</label><input id="rearRestAngle" name="rearRestAngle" type="number" step="1" min="0" max="180" value="90"><small>90 = perpendiculaires à la machine.</small></div>
               <div class="form-section-title">Montage commun aux deux paires</div>
               <div class="field"><label for="pivotSpacing"><span class="sym">b</span>Entraxe des pivots (m)</label><input id="pivotSpacing" name="pivotSpacing" type="number" step="0.001" min="0.3" max="1.2" value="0.515"><small>Entre pivots gauche et droit d’une paire.</small></div>
               <div class="field"><label for="armLength"><span class="sym">L</span>Longueur des bras (m)</label><input id="armLength" name="armLength" type="number" step="0.005" min="0.1" max="1.2" value="0.395"></div>
@@ -351,7 +353,7 @@
               <div class="field"><label for="trackWidth"><span class="sym">V</span>Voie machine (m)</label><input id="trackWidth" name="trackWidth" type="number" step="0.01" min="0.5" max="3" value="1.16"><small>Affichage uniquement.</small></div>
               <div class="form-section-title">Estimateur et validité</div>
               <div class="field"><label for="estimator">Estimateur</label><select id="estimator" name="estimator"><option value="v1" selected>v1 · point de contact</option><option value="v2">v2 · bissectrice (à valider)</option></select></div>
-              <div class="field"><label for="contactThreshold"><span class="sym">θ</span>Seuil de contact (°)</label><input id="contactThreshold" name="contactThreshold" type="number" step="0.5" min="1" max="30" value="3"></div>
+              <div class="field"><label for="contactThreshold"><span class="sym">φ</span>Seuil de contact (°)</label><input id="contactThreshold" name="contactThreshold" type="number" step="0.5" min="1" max="30" value="3"></div>
               <div class="field"><label for="hysteresis">Hystérésis (°)</label><input id="hysteresis" name="hysteresis" type="number" step="0.5" min="0" max="10" value="1"></div>
               <div class="field"><label for="medianWindow">Fenêtre médiane</label><input id="medianWindow" name="medianWindow" type="number" step="2" min="3" max="21" value="5"></div>
               <div class="field"><label for="publishRate">Fréquence publication (Hz)</label><input id="publishRate" name="publishRate" type="number" step="5" min="5" max="200" value="50"></div>
@@ -386,12 +388,12 @@
               <text x="154" y="434" class="dg-axis-label">O</text>
               <!-- Paires (bras retournés par JS si orientés vers l'arrière) -->
               <g id="dgPair-front" class="hl" data-param="activePairs">
-                <g id="dgArms-front" class="hl dg-arms" data-param="frontArmDirection"><line x1="129" y1="80" x2="151.9" y2="63.9"/><line x1="171" y1="80" x2="148.1" y2="63.9"/></g>
+                <g id="dgArms-front" class="hl dg-arms" data-param="frontRestAngle"><line x1="129" y1="79" x2="160.6" y2="79"/><line x1="171" y1="81" x2="139.4" y2="81"/></g>
                 <circle cx="129" cy="80" r="3.5" class="dg-pivot"/><circle cx="171" cy="80" r="3.5" class="dg-pivot"/>
                 <text x="10" y="84" class="dg-small">paire AV</text>
               </g>
               <g id="dgPair-rear" class="hl" data-param="activePairs">
-                <g id="dgArms-rear" class="hl dg-arms" data-param="rearArmDirection"><line x1="129" y1="452" x2="151.9" y2="435.9"/><line x1="171" y1="452" x2="148.1" y2="435.9"/></g>
+                <g id="dgArms-rear" class="hl dg-arms" data-param="rearRestAngle"><line x1="129" y1="451" x2="160.6" y2="451"/><line x1="171" y1="453" x2="139.4" y2="453"/></g>
                 <circle cx="129" cy="452" r="3.5" class="dg-pivot"/><circle cx="171" cy="452" r="3.5" class="dg-pivot"/>
                 <text x="10" y="456" class="dg-small">paire AR</text>
               </g>
@@ -421,40 +423,43 @@
                 <text x="230" y="447" class="dg-val" data-value="rearOffset">−0,40 m</text>
               </g>
             </svg>
-            <!-- Détail d'une paire : b, L, c, θ. Coordonnées : 360 px/m. -->
-            <svg class="diagram" viewBox="0 0 280 340" role="img" aria-label="Détail d'une paire de palpeurs : entraxe b, longueur L, contact c, angle θ">
+            <!-- Détail d'une paire : bras ⟂ au repos (pointillés), repoussés vers l'arrière par un cep. 360 px/m. -->
+            <svg class="diagram" viewBox="0 0 280 262" role="img" aria-label="Détail d'une paire : entraxe b, longueur L, contact c, angle de repos θ0 et balayage φ">
               <text x="10" y="18" class="dg-caption">DÉTAIL D’UNE PAIRE · AVANT ↑</text>
-              <line x1="140" y1="28" x2="140" y2="200" class="dg-row"/>
-              <text x="144" y="40" class="dg-small dg-green">rang</text>
-              <line x1="45.5" y1="270" x2="45.5" y2="168" class="dg-ref"/>
-              <text x="49" y="174" class="dg-small">axe x (θ = 0°)</text>
-              <circle cx="140" cy="222" r="14" class="dg-object"/>
-              <text x="150" y="250" class="dg-small">cep</text>
-              <g class="dg-arms"><line x1="45.5" y1="270" x2="148.7" y2="197.7"/><line x1="234.5" y1="270" x2="131.3" y2="197.7"/></g>
-              <circle cx="131.5" cy="209.7" r="2.6" class="dg-contact"/><circle cx="148.5" cy="209.7" r="2.6" class="dg-contact"/>
-              <circle cx="45.5" cy="270" r="4.5" class="dg-pivot"/><circle cx="234.5" cy="270" r="4.5" class="dg-pivot"/>
-              <text x="52" y="292" class="dg-small">pivot G (axe capteur)</text>
-              <text x="228" y="292" class="dg-small" text-anchor="end">pivot D</text>
+              <line x1="140" y1="28" x2="140" y2="256" class="dg-row"/>
+              <text x="144" y="252" class="dg-small dg-green">rang</text>
+              <g class="hl" data-param="frontRestAngle rearRestAngle">
+                <line x1="47.3" y1="88" x2="189.5" y2="88" class="dg-ghost"/><line x1="232.7" y1="92" x2="90.5" y2="92" class="dg-ghost"/>
+                <text x="140" y="80" class="dg-small" text-anchor="middle">repos : θ<tspan dy="2" font-size="7">0</tspan><tspan dy="-2"> = 90° (⟂ machine)</tspan></text>
+              </g>
+              <circle cx="140" cy="178.4" r="12" class="dg-object"/>
+              <text x="126" y="214" class="dg-small" text-anchor="end">cep</text>
+              <g class="dg-arms"><line x1="47.3" y1="90" x2="140.6" y2="197.4"/><line x1="232.7" y1="90" x2="139.4" y2="197.4"/></g>
+              <circle cx="130.9" cy="186.3" r="2.6" class="dg-contact"/><circle cx="149.1" cy="186.3" r="2.6" class="dg-contact"/>
+              <circle cx="47.3" cy="90" r="4.5" class="dg-pivot"/><circle cx="232.7" cy="90" r="4.5" class="dg-pivot"/>
+              <text x="8" y="110" class="dg-small">pivot G</text>
+              <text x="272" y="110" class="dg-small" text-anchor="end">pivot D</text>
               <g class="hl dim" data-param="contactThreshold">
-                <path d="M45.5 236 A34 34 0 0 1 73.3 250.5"/>
-                <text x="58" y="231" class="dg-sym">θ</text>
+                <path d="M87.3 90 A40 40 0 0 1 73.5 120.2"/>
+                <text x="92" y="116" class="dg-sym">φ</text>
               </g>
               <g class="hl dim" data-param="contactLength">
-                <line x1="45.5" y1="270" x2="131.5" y2="209.7" class="dg-cseg"/>
-                <text x="94" y="254" class="dg-sym">c</text>
-                <text x="94" y="267" class="dg-val" data-value="contactLength">0,35 m</text>
+                <line x1="47.3" y1="90" x2="130.9" y2="186.3" class="dg-cseg"/>
+                <text x="64" y="152" class="dg-sym">c</text>
+                <text x="64" y="165" class="dg-val" data-value="contactLength">0,395 m</text>
               </g>
               <g class="hl dim" data-param="armLength">
-                <line x1="234.5" y1="270" x2="245.4" y2="254.4" class="ext"/><line x1="131.3" y1="197.7" x2="142.2" y2="182.1" class="ext"/>
-                <line x1="243.7" y1="256.9" x2="140.5" y2="184.6"/><circle cx="243.7" cy="256.9" r="2"/><circle cx="140.5" cy="184.6" r="2"/>
-                <text x="196" y="208" class="dg-sym">L</text>
-                <text x="208" y="208" class="dg-val" data-value="armLength">0,35 m</text>
+                <line x1="232.7" y1="90" x2="247" y2="102.5" class="ext"/><line x1="139.4" y1="197.4" x2="153.7" y2="209.9" class="ext"/>
+                <line x1="244.8" y1="100.5" x2="151.5" y2="207.9"/><circle cx="244.8" cy="100.5" r="2"/><circle cx="151.5" cy="207.9" r="2"/>
+                <text x="204" y="166" class="dg-sym">L</text>
+                <text x="216" y="166" class="dg-val" data-value="armLength">0,395 m</text>
               </g>
               <g class="hl dim" data-param="pivotSpacing">
-                <line x1="45.5" y1="277" x2="45.5" y2="311" class="ext"/><line x1="234.5" y1="277" x2="234.5" y2="311" class="ext"/>
-                <line x1="45.5" y1="305" x2="234.5" y2="305"/><line x1="41.5" y1="309" x2="49.5" y2="301"/><line x1="230.5" y1="309" x2="238.5" y2="301"/>
-                <text x="140" y="325" class="dg-sym" text-anchor="middle">b <tspan class="dg-val" data-value="pivotSpacing">0,525 m</tspan></text>
+                <line x1="47.3" y1="84" x2="47.3" y2="56" class="ext"/><line x1="232.7" y1="84" x2="232.7" y2="56" class="ext"/>
+                <line x1="47.3" y1="62" x2="232.7" y2="62"/><line x1="43.3" y1="66" x2="51.3" y2="58"/><line x1="228.7" y1="66" x2="236.7" y2="58"/>
+                <text x="140" y="52" class="dg-sym" text-anchor="middle">b <tspan class="dg-val" data-value="pivotSpacing">0,515 m</tspan></text>
               </g>
+              <text x="140" y="232" class="dg-small" text-anchor="middle">en avançant, le cep repousse les bras vers l’arrière (φ &gt; 0)</text>
             </svg>
           </div>
           <ol class="measure-list">
@@ -465,7 +470,8 @@
             <li data-param="armLength"><span class="sym">L</span><div><strong>Longueur de bras</strong> · axe du capteur → extrémité du bras.</div></li>
             <li data-param="contactLength"><span class="sym">c</span><div><strong>Contact effectif</strong> · axe du capteur → zone où le bras frotte les ceps (repérer l’usure). Laisser c = L à défaut.</div></li>
             <li data-param="trackWidth"><span class="sym">V</span><div><strong>Voie</strong> · milieu du pneu gauche → milieu du pneu droit. Sert seulement à l’affichage.</div></li>
-            <li data-param="contactThreshold"><span class="sym">θ</span><div><strong>Angle de bras</strong> · lu par le capteur, rien à mesurer. 0° = bras parallèle à la machine, positif vers l’intérieur ; le neutre vient de la calibration.</div></li>
+            <li data-param="frontRestAngle rearRestAngle"><span class="sym">θ<sub>0</sub></span><div><strong>Angle au repos</strong> · angle du bras libre par rapport à l’axe de la machine. 90° = bras perpendiculaires (montage actuel, bras croisés de 2L − b).</div></li>
+            <li data-param="contactThreshold"><span class="sym">φ</span><div><strong>Balayage</strong> · lu par le capteur, rien à mesurer. 0 au repos (neutre calibré), positif quand le cep repousse le bras vers l’arrière, négatif en marche arrière.</div></li>
           </ol>
           <p class="form-note">Machine sur sol plat, roues droites, bras au repos. Toujours mesurer d’axe à axe (centres de rotation), à ±1 cm près. Les cotes W, d<sub>AV</sub> et d<sub>AR</sub> comptent surtout pour le cap (mode 2 paires).</p>
         </div>
@@ -484,12 +490,13 @@
       <div class="view-head"><div><p class="eyebrow" id="calEyebrow">Assistant · deux capteurs</p><h1>Calibration</h1><p class="view-desc">Seuls les capteurs des paires actives sont à calibrer.</p></div><span class="chip warn" id="calibrationState">Non calibré</span></div>
       <div class="split-layout">
         <div class="panel">
-          <div class="panel-heading"><div><h2>Procédure</h2><p>Neutre capteur par capteur, puis butées, puis centre.</p></div></div>
-          <div class="cal-steps"><div class="cal-step"><strong>01 · Neutre</strong><span>Bras au repos, sans contact, lecture stable sur 2 s.</span></div><div class="cal-step"><strong>02 · Butées</strong><span>Balayer à fond tous les bras actifs pendant 10 s.</span></div><div class="cal-step"><strong>03 · Centre</strong><span>Machine centrée et alignée dans un rang connu. Avec 2 paires, remet aussi le cap à zéro.</span></div></div>
+          <div class="panel-heading"><div><h2>Procédure</h2><p>Neutre capteur par capteur, puis sens, butées et centre.</p></div></div>
+          <div class="cal-steps"><div class="cal-step"><strong>01 · Neutre</strong><span>Bras au repos (perpendiculaires), sans contact, lecture stable sur 2 s.</span></div><div class="cal-step"><strong>02 · Sens</strong><span>Tenir tous les bras actifs repoussés vers l’arrière, puis capturer.</span></div><div class="cal-step"><strong>03 · Butées</strong><span>Balayer à fond tous les bras actifs pendant 10 s.</span></div><div class="cal-step"><strong>04 · Centre</strong><span>Machine centrée et alignée dans un rang connu. Avec 2 paires, remet aussi le cap à zéro.</span></div></div>
           <div class="cal-value" id="neutralRow-front_left"><div><strong>Neutre · avant gauche</strong><small id="neutralStatus-front_left">À capturer</small></div><button class="btn" type="button" data-capture="neutral_front_left">Capturer</button></div>
           <div class="cal-value" id="neutralRow-front_right"><div><strong>Neutre · avant droit</strong><small id="neutralStatus-front_right">À capturer</small></div><button class="btn" type="button" data-capture="neutral_front_right">Capturer</button></div>
           <div class="cal-value" id="neutralRow-rear_left"><div><strong>Neutre · arrière gauche</strong><small id="neutralStatus-rear_left">À capturer</small></div><button class="btn" type="button" data-capture="neutral_rear_left">Capturer</button></div>
           <div class="cal-value" id="neutralRow-rear_right"><div><strong>Neutre · arrière droit</strong><small id="neutralStatus-rear_right">À capturer</small></div><button class="btn" type="button" data-capture="neutral_rear_right">Capturer</button></div>
+          <div class="cal-value"><div><strong>Sens · bras tenus vers l’arrière</strong><small id="directionStatus">Sens non appris</small></div><button class="btn" type="button" data-capture="direction">Capturer le sens</button></div>
           <div class="cal-value"><div><strong>Butées · tous les bras actifs</strong><small id="endpointsStatus">Min/max non capturés</small></div><button class="btn" type="button" data-capture="endpoints">Capturer min/max</button></div>
           <div class="cal-value"><div><strong>Centre latéral</strong><small id="centerStatus">Biais de référence non défini</small></div><button class="btn" type="button" data-capture="center">Définir</button></div>
           <div class="form-actions"><button class="btn danger" id="resetCalibration" type="button">Réinitialiser la calibration</button></div>
@@ -502,7 +509,7 @@
             <div class="sensor-cell" id="calCell-rear_left"><div class="sensor-title">AR GAUCHE</div><div class="sensor-reading" id="calV-rear_left">—</div></div>
             <div class="sensor-cell" id="calCell-rear_right"><div class="sensor-title">AR DROIT</div><div class="sensor-reading" id="calV-rear_right">—</div></div>
           </div>
-          <p class="form-note">La capture du neutre est refusée si la tension n’est pas stable. Les butées sont validées si chaque bras balaie au moins 2 V.</p>
+          <p class="form-note">La capture du neutre est refusée si la tension n’est pas stable. Les butées sont validées si chaque bras balaie au moins 1 V (≈ 45°) ; elles servent au contrôle, le gain est celui de la fiche capteur (22,2 mV/°).</p>
         </div>
       </div>
     </section>
@@ -560,8 +567,8 @@
 
       const defaults = {
         activePairs: "front", wheelbase: 2.14,
-        frontOffset: 0.4, frontArmDirection: "forward",
-        rearOffset: -0.4, rearArmDirection: "forward",
+        frontOffset: 0.4, frontRestAngle: 90,
+        rearOffset: -0.4, rearRestAngle: 90,
         pivotSpacing: 0.515, armLength: 0.395, contactLength: 0.395, trackWidth: 1.16,
         estimator: "v1", contactThreshold: 3, hysteresis: 1, medianWindow: 5, publishRate: 50
       };
@@ -596,7 +603,7 @@
       }
       function newLocalCalibration() {
         return {
-          sensors: Object.fromEntries(SENSOR_IDS.map((id) => [id, { neutral: false, endpoints: false, neutral_v: null }])),
+          sensors: Object.fromEntries(SENSOR_IDS.map((id) => [id, { neutral: false, direction: false, endpoints: false, neutral_v: null }])),
           center: { front: false, rear: false }
         };
       }
@@ -647,7 +654,7 @@
 
       // ---------- Schéma « Où prendre les mesures » ----------
       // Les cotes affichent les valeurs du formulaire (même non enregistrées).
-      const diagramFormats = { wheelbase: [2, false], frontOffset: [2, true], rearOffset: [2, true], trackWidth: [2, false], pivotSpacing: [3, false], armLength: [2, false], contactLength: [2, false] };
+      const diagramFormats = { wheelbase: [2, false], frontOffset: [2, true], rearOffset: [2, true], trackWidth: [2, false], pivotSpacing: [3, false], armLength: [3, false], contactLength: [3, false] };
       function updateDiagram() {
         const formValue = (name) => document.querySelector(`[name="${name}"]`)?.value;
         Object.entries(diagramFormats).forEach(([name, [digits, showSign]]) => {
@@ -660,40 +667,54 @@
         const active = formValue("activePairs");
         [["front", 80], ["rear", 452]].forEach(([pair, pivotY]) => {
           $(`dgPair-${pair}`).style.opacity = active === "both" || active === pair ? "1" : "0.28";
-          // Bras vers l'arrière : symétrie autour de l'axe des pivots.
-          const backward = formValue(`${pair}ArmDirection`) === "backward";
-          $(`dgArms-${pair}`).setAttribute("transform", backward ? `matrix(1 0 0 -1 0 ${2 * pivotY})` : "");
+          // Bras au repos, dessinés à l'angle θ0 saisi (80 px/m, avant en haut).
+          const rest = Number(formValue(`${pair}RestAngle`));
+          const theta = (Number.isFinite(rest) ? rest : 90) * Math.PI / 180;
+          const length = (Number(formValue("armLength")) || 0.395) * 80;
+          const [left, right] = $(`dgArms-${pair}`).querySelectorAll("line");
+          const dx = Math.sin(theta) * length, dy = -Math.cos(theta) * length;
+          left.setAttribute("x2", (129 + dx).toFixed(1)); left.setAttribute("y2", (pivotY - 1 + dy).toFixed(1));
+          right.setAttribute("x2", (171 - dx).toFixed(1)); right.setAttribute("y2", (pivotY + 1 + dy).toFixed(1));
         });
       }
+      // data-param peut lister plusieurs champs séparés par des espaces.
       function highlightParam(name) {
         document.querySelectorAll(".diagram .hl[data-param], .measure-list li[data-param]")
-          .forEach((node) => node.classList.toggle("active", Boolean(name) && node.dataset.param === name));
+          .forEach((node) => node.classList.toggle("active", Boolean(name) && node.dataset.param.split(" ").includes(name)));
       }
       $("settingsForm").addEventListener("input", updateDiagram);
       $("settingsForm").addEventListener("change", updateDiagram);
       $("settingsForm").addEventListener("focusin", (event) => highlightParam(event.target.name));
       $("settingsForm").addEventListener("focusout", () => highlightParam(null));
       document.querySelectorAll(".diagram .hl[data-param], .measure-list li[data-param]").forEach((node) => {
-        node.addEventListener("mouseenter", () => highlightParam(node.dataset.param));
+        const firstParam = node.dataset.param.split(" ")[0];
+        node.addEventListener("mouseenter", () => highlightParam(firstParam));
         node.addEventListener("mouseleave", () => highlightParam(document.activeElement?.name || null));
-        node.addEventListener("click", () => document.querySelector(`[name="${node.dataset.param}"]`)?.focus());
+        node.addEventListener("click", () => document.querySelector(`[name="${firstParam}"]`)?.focus());
       });
 
       // ---------- Simulateur de page (même modèle que tools/mock_server.py) ----------
       function simulatedPair(pair, rowY, t) {
-        const empty = { voltage_v: null, angle_raw_deg: null, angle_filtered_deg: null, contact: false, fault: false };
+        const empty = { voltage_v: null, angle_raw_deg: null, angle_filtered_deg: null, arm_angle_deg: null, contact: false, fault: false };
         if (!pairEnabled(pair)) {
           return { enabled: false, valid: false, reason: "pair_disabled", x_m: pairX(pair), row_y_m: null, apparent_width_m: null, left: { ...empty }, right: { ...empty } };
         }
         const half = config.pivotSpacing / 2, reach = config.contactLength;
         const clamp = (v) => Math.max(-1, Math.min(1, v));
         const jitter = 0.15 * Math.sin(t * 2.3 + (pair === "front" ? 0 : 1.7));
-        const angles = {
-          left: Math.asin(clamp((half - (rowY + OBJECT_RADIUS_M)) / reach)) * 180 / Math.PI + jitter,
-          right: Math.asin(clamp((half + (rowY - OBJECT_RADIUS_M)) / reach)) * 180 / Math.PI - jitter
+        // Bras repoussés vers l'arrière : angle géométrique au-delà de 90°.
+        const armAngles = {
+          left: 180 - Math.asin(clamp((half - (rowY + OBJECT_RADIUS_M)) / reach)) * 180 / Math.PI + jitter,
+          right: 180 - Math.asin(clamp((half + (rowY - OBJECT_RADIUS_M)) / reach)) * 180 / Math.PI - jitter
         };
-        const side = (angle) => ({ voltage_v: 0.5 + (angle + 90) * 4 / 180, angle_raw_deg: angle, angle_filtered_deg: angle - jitter * 0.8, contact: true, fault: false });
-        return { enabled: true, valid: true, reason: "none", x_m: pairX(pair), row_y_m: rowY, apparent_width_m: 2 * OBJECT_RADIUS_M, left: side(angles.left), right: side(angles.right) };
+        const restValue = Number(config[`${pair}RestAngle`]);
+        const rest = Number.isFinite(restValue) ? restValue : 90;
+        // Capteurs montés en miroir : la tension monte à gauche, descend à droite.
+        const side = (armAngle, sign) => {
+          const sweep = armAngle - rest;
+          return { voltage_v: 2.5 + sign * sweep * 4 / 180, angle_raw_deg: sweep, angle_filtered_deg: sweep - jitter * 0.8, arm_angle_deg: armAngle - jitter * 0.8, contact: true, fault: false };
+        };
+        return { enabled: true, valid: true, reason: "none", x_m: pairX(pair), row_y_m: rowY, apparent_width_m: 2 * OBJECT_RADIUS_M, left: side(armAngles.left, 1), right: side(armAngles.right, -1) };
       }
 
       function computePose(front, rear) {
@@ -921,19 +942,20 @@
         PAIRS.forEach((p) => {
           const pair = state[`${p}_pair`] || {};
           const py = yOf(pairX(p));
-          const s = (p === "front" ? config.frontArmDirection : config.rearArmDirection) === "backward" ? -1 : 1;
           const pivots = { left: cx - (config.pivotSpacing / 2) * k, right: cx + (config.pivotSpacing / 2) * k };
           ctx.textAlign = "left";
           ctx.fillStyle = pair.enabled ? "#35443b" : "#a9b1aa";
           ctx.fillText(p === "front" ? "AV" : "AR", pivots.right + 10, py + 4);
           ["left", "right"].forEach((side) => {
             const sensor = pair[side] || {};
-            const angle = isNum(sensor.angle_filtered_deg) ? sensor.angle_filtered_deg : sensor.angle_raw_deg;
+            // Angle géométrique depuis l'axe x (avant), positif vers l'intérieur :
+            // 90° = perpendiculaire, > 90° = bras repoussé vers l'arrière.
+            const angle = sensor.arm_angle_deg;
             const px = pivots[side];
             const color = !pair.enabled ? "#c3c9c3" : sensor.fault ? "#b94343" : sensor.contact ? "#c76b2c" : "#8a948c";
             if (pair.enabled && isNum(angle)) {
               const rad = angle * Math.PI / 180;
-              const dx = (side === "left" ? 1 : -1) * Math.sin(rad), dy = -s * Math.cos(rad);
+              const dx = (side === "left" ? 1 : -1) * Math.sin(rad), dy = -Math.cos(rad);
               ctx.strokeStyle = color; ctx.lineWidth = 4; ctx.lineCap = "round";
               ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + dx * L, py + dy * L); ctx.stroke();
               if (sensor.contact) { ctx.fillStyle = "#17201c"; ctx.beginPath(); ctx.arc(px + dx * c, py + dy * c, 2.5, 0, Math.PI * 2); ctx.fill(); }
@@ -993,7 +1015,7 @@
         if (hardwareCalibration?.sensors) return hardwareCalibration;
         const sensors = Object.fromEntries(SENSOR_IDS.map((id) => {
           const item = localCal.sensors[id];
-          return [id, { enabled: pairEnabled(pairOf(id)), neutral: item.neutral, neutral_v: item.neutral_v, endpoints: item.endpoints, calibrated: item.neutral && item.endpoints }];
+          return [id, { enabled: pairEnabled(pairOf(id)), neutral: item.neutral, neutral_v: item.neutral_v, direction: item.direction, backward_range_deg: item.direction ? 90 : null, endpoints: item.endpoints, calibrated: item.neutral && item.direction && item.endpoints }];
         }));
         const calibrated = Object.values(sensors).filter((item) => item.enabled).every((item) => item.calibrated);
         return { sensors, center: { ...localCal.center }, capturing_endpoints: false, capture_remaining_ms: 0, calibrated, demo: true };
@@ -1010,6 +1032,14 @@
             : "À capturer · moyenne stable sur 2 s";
         });
         const enabledSensors = SENSOR_IDS.filter((id) => cal.sensors[id]?.enabled);
+        // Sens appris + course disponible vers l'arrière (neutre trop près d'une
+        // extrémité électrique = mesure tronquée quand le bras recule beaucoup).
+        const directionDone = enabledSensors.filter((id) => cal.sensors[id].direction);
+        const ranges = directionDone.map((id) => cal.sensors[id].backward_range_deg).filter(isNum);
+        const minRange = ranges.length ? Math.min(...ranges) : null;
+        $("directionStatus").textContent = directionDone.length
+          ? `${directionDone.length}/${enabledSensors.length} bras appris${isNum(minRange) ? ` · course arrière mini ${minRange.toFixed(0)}°${minRange < 60 ? " ⚠ recaler le capteur" : ""}` : ""}${demo}`
+          : "Sens non appris · capturer le neutre d’abord";
         const endpointsDone = enabledSensors.filter((id) => cal.sensors[id].endpoints).length;
         $("endpointsStatus").textContent = cal.capturing_endpoints
           ? `Balayage en cours · ${Math.ceil(cal.capture_remaining_ms / 1000)} s restantes`
@@ -1048,6 +1078,10 @@
           const id = name.slice("neutral_".length);
           localCal.sensors[id].neutral = true;
           localCal.sensors[id].neutral_v = sensorOf(state, id)?.voltage_v ?? null;
+        } else if (name === "direction") {
+          const active = SENSOR_IDS.filter((id) => pairEnabled(pairOf(id)));
+          if (!active.every((id) => localCal.sensors[id].neutral)) { toast("Capturer d’abord le neutre de tous les bras actifs."); return; }
+          active.forEach((id) => { localCal.sensors[id].direction = true; });
         } else if (name === "endpoints") {
           SENSOR_IDS.filter((id) => pairEnabled(pairOf(id))).forEach((id) => { localCal.sensors[id].endpoints = true; });
         } else if (name === "center") {
@@ -1182,7 +1216,7 @@
       $("downloadCsv").addEventListener("click", () => {
         if (!csvBuffer.length) { toast("Aucun échantillon enregistré."); return; }
         const cell = (value, digits) => isNum(value) ? value.toFixed(digits) : "";
-        const header = ["horodatage", "simulation", "paires", "decalage_cm", "reference", "cap_deg", ...SENSOR_IDS.flatMap((id) => [`angle_${id}_deg`, `tension_${id}_v`])];
+        const header = ["horodatage", "simulation", "paires", "decalage_cm", "reference", "cap_deg", ...SENSOR_IDS.flatMap((id) => [`balayage_${id}_deg`, `tension_${id}_v`])];
         const rows = [header.join(";"), ...csvBuffer.map((item) => [
           item.time, item.simulation ? 1 : 0, item.pairs, cell(item.offset, 2), item.reference, cell(item.heading, 3),
           ...SENSOR_IDS.flatMap((id) => [cell(item[`${id}_deg`], 2), cell(item[`${id}_v`], 3)])

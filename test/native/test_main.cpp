@@ -57,6 +57,16 @@ void testCalibration() {
              90.0f),
         "inverted channel reverses angle sign");
 
+  // Le gain est nominal (22,2 mV/°) : les butées mécaniques ne le modifient pas.
+  calibration.invert = false;
+  calibration.voltage_min_v = 0.8f;
+  calibration.voltage_neutral_v = 1.5f;
+  calibration.voltage_max_v = 4.0f;
+  const auto swept = palpeur::convertVoltageToAngle(2.5f, calibration);
+  check(swept.valid && near(swept.angle_deg, 45.0f, 0.01f) &&
+            near(swept.neutral_angle_deg, 0.0f),
+        "angle is relative to neutral with nominal sensor gain");
+
   const float stable_samples[] = {2.49f, 2.50f, 2.51f};
   float captured_mean = 0.0f;
   check(palpeur::captureStableVoltage(stable_samples, 3, 0.03f, captured_mean) &&
@@ -325,6 +335,37 @@ void testTwoPairSimulation() {
         "two-pair simulation recovers rear axle offset within 2 cm");
 }
 
+// Montage réel : bras perpendiculaires au repos (θ0 = 90°), repoussés vers
+// l'arrière par le cep. Le simulateur (bras vers l'arrière, s = -1) donne un
+// angle mesuré depuis -x ; dans la convention firmware (s = +1, θ depuis +x),
+// θ = 180° - θ_sim et le balayage vaut θ - 90°.
+void testBackwardSweptPair() {
+  palpeur::PairConfig estimator_config;
+  estimator_config.x_m = 2.54f;
+  estimator_config.pivot_spacing_m = 0.515f;
+  estimator_config.contact_length_m = 0.395f;
+  estimator_config.arm_direction = 1;
+
+  palpeur::CircularObjectScenario scenario;
+  scenario.pair = estimator_config;
+  scenario.pair.arm_direction = -1;
+  scenario.diameter_m = 0.05f;
+  scenario.row_y_at_pair_m = 0.03f;
+  const auto contact = palpeur::simulateCircularObjectContact(scenario);
+  check(contact.valid, "backward-swept arms touch the simulated vine");
+  if (!contact.valid) return;
+
+  palpeur::PairInput input = contact.input;
+  input.left_angle_deg = 180.0f - contact.input.left_angle_deg;
+  input.right_angle_deg = 180.0f - contact.input.right_angle_deg;
+  check(input.left_angle_deg > 90.0f && input.right_angle_deg > 90.0f,
+        "arms pushed backward have a geometric angle above 90 deg");
+
+  const auto estimate = palpeur::ContactPointEstimator().estimate(estimator_config, input);
+  check(estimate.valid && near(estimate.row_y_m, 0.03f, 0.02f),
+        "v1 locates a row offset with backward-swept arms within 2 cm");
+}
+
 void testDisabledPairReason() {
   palpeur::VehicleGeometry geometry;
   palpeur::PairEstimate rear;
@@ -363,6 +404,7 @@ int main() {
   testCanProtocol();
   testGeometrySimulation();
   testTwoPairSimulation();
+  testBackwardSweptPair();
   testDisabledPairReason();
   testDisabledCanBus();
   if (failures != 0) {

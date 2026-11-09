@@ -28,8 +28,8 @@ DEFAULT_CONFIG = {
     "contactLength": 0.395,
     "frontOffset": 0.4,
     "rearOffset": -0.4,
-    "frontArmDirection": "forward",
-    "rearArmDirection": "forward",
+    "frontRestAngle": 90.0,
+    "rearRestAngle": 90.0,
     "trackWidth": 1.16,
     "estimator": "v1",
     "contactThreshold": 3.0,
@@ -49,19 +49,22 @@ CONFIG_RANGES = {
     "hysteresis": (0.0, 10.0),
     "medianWindow": (3, 21),
     "publishRate": (5, 200),
+    "frontRestAngle": (0.0, 180.0),
+    "rearRestAngle": (0.0, 180.0),
 }
 CHOICES = {
     "activePairs": ("front", "rear", "both"),
-    "frontArmDirection": ("forward", "backward"),
-    "rearArmDirection": ("forward", "backward"),
     "estimator": ("v1", "v2"),
 }
+VOLTS_PER_DEGREE = 4.0 / 180.0
 OBJECT_RADIUS_M = 0.05
 
 
 def new_calibration() -> dict:
     return {
-        "sensors": {name: {"neutral": False, "endpoints": False} for name in SENSORS},
+        "sensors": {
+            name: {"neutral": False, "direction": False, "endpoints": False} for name in SENSORS
+        },
         "center": {"front": False, "rear": False},
     }
 
@@ -86,16 +89,17 @@ def pair_x(pair: str) -> float:
     return config["rearOffset"]
 
 
-def nominal_voltage(angle_deg: float) -> float:
-    return 0.5 + (angle_deg + 90.0) * 4.0 / 180.0
-
-
 def simulated_pair(pair: str, row_y_m: float, elapsed: float) -> dict:
-    """Angles des bras touchant un objet rond centré en row_y_m (modèle v1)."""
+    """Bras repoussés vers l'arrière par un objet rond centré en row_y_m.
+
+    Contact supposé en bout de bras (modèle v1). Angles publiés :
+    angle_*_deg = balayage depuis le repos (+ vers l'arrière),
+    arm_angle_deg = angle géométrique depuis l'axe x.
+    """
     config = STATE["config"]
     disabled_sensor = {
         "voltage_v": None, "angle_raw_deg": None, "angle_filtered_deg": None,
-        "contact": False, "fault": False,
+        "arm_angle_deg": None, "contact": False, "fault": False,
     }
     if not pair_enabled(pair):
         return {
@@ -110,16 +114,22 @@ def simulated_pair(pair: str, row_y_m: float, elapsed: float) -> dict:
     sin_left = max(-1.0, min(1.0, (half - (row_y_m + OBJECT_RADIUS_M)) / reach))
     sin_right = max(-1.0, min(1.0, (half + (row_y_m - OBJECT_RADIUS_M)) / reach))
     jitter = 0.15 * math.sin(elapsed * 2.3 + (0.0 if pair == "front" else 1.7))
-    angles = {
-        "left": math.degrees(math.asin(sin_left)) + jitter,
-        "right": math.degrees(math.asin(sin_right)) - jitter,
+    rest = config[f"{pair}RestAngle"]
+    # Bras balayé vers l'arrière : angle géométrique au-delà de 90°.
+    arm_angles = {
+        "left": 180.0 - math.degrees(math.asin(sin_left)) + jitter,
+        "right": 180.0 - math.degrees(math.asin(sin_right)) - jitter,
     }
+    # Capteurs montés en miroir : la tension monte à gauche et descend à droite.
+    voltage_sign = {"left": 1.0, "right": -1.0}
     sides = {}
-    for side, angle in angles.items():
+    for side, arm_angle in arm_angles.items():
+        sweep = arm_angle - rest
         sides[side] = {
-            "voltage_v": round(nominal_voltage(angle), 3),
-            "angle_raw_deg": round(angle, 2),
-            "angle_filtered_deg": round(angle - jitter * 0.8, 2),
+            "voltage_v": round(2.5 + voltage_sign[side] * sweep * VOLTS_PER_DEGREE, 3),
+            "angle_raw_deg": round(sweep, 2),
+            "angle_filtered_deg": round(sweep - jitter * 0.8, 2),
+            "arm_angle_deg": round(arm_angle - jitter * 0.8, 2),
             "contact": True,
             "fault": False,
         }
@@ -205,10 +215,12 @@ def calibration_state() -> dict:
             "enabled": enabled,
             "neutral": item["neutral"],
             "neutral_v": 2.5,
+            "direction": item["direction"],
+            "backward_range_deg": 90.0 if item["direction"] else None,
             "endpoints": item["endpoints"],
             "min_v": 0.5,
             "max_v": 4.5,
-            "calibrated": item["neutral"] and item["endpoints"],
+            "calibrated": item["neutral"] and item["direction"] and item["endpoints"],
         }
     complete = all(item["calibrated"] for item in sensors.values() if item["enabled"])
     return {
@@ -277,6 +289,16 @@ class MockHandler(BaseHTTPRequestHandler):
                 self._send_json({"ok": False, "error": "Capteur d'une paire désactivée"}, status=409)
                 return
             calibration["sensors"][sensor]["neutral"] = True
+        elif name == "direction":
+            active = [sensor for sensor in SENSORS if pair_enabled(sensor.split("_")[0])]
+            if not all(calibration["sensors"][sensor]["neutral"] for sensor in active):
+                self._send_json(
+                    {"ok": False, "error": "Capturer d'abord le neutre de tous les bras actifs"},
+                    status=409,
+                )
+                return
+            for sensor in active:
+                calibration["sensors"][sensor]["direction"] = True
         elif name == "endpoints":
             for sensor in SENSORS:
                 if pair_enabled(sensor.split("_")[0]):

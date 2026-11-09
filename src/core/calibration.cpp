@@ -8,7 +8,9 @@ namespace {
 
 constexpr float kMinimumSensorVoltage = 0.3f;
 constexpr float kMaximumSensorVoltage = 4.7f;
-constexpr float kMinimumCalibrationSpan = 2.0f;
+// Les butées servent au contrôle de cohérence, pas au gain : la course du
+// bras est limitée mécaniquement et ne couvre pas forcément les 180° du capteur.
+constexpr float kMinimumCalibrationSpan = 1.0f;
 constexpr float kMinimumStableSamples = 2.0f;
 
 }  // namespace
@@ -42,13 +44,12 @@ AngleReading convertVoltageToAngle(
     return result;
   }
 
-  const float span = calibration.voltage_max_v - calibration.voltage_min_v;
-  const float neutral_fraction =
-      (calibration.voltage_neutral_v - calibration.voltage_min_v) / span;
-  const float measured_fraction = (voltage_v - calibration.voltage_min_v) / span;
+  // RTY180HVNAA non ratiométrique : 4,0 V pour 180°, soit un gain fixe.
+  // Angle relatif au neutre calibré (bras au repos), signe fixé par `invert`.
   const float direction = calibration.invert ? -1.0f : 1.0f;
-  result.angle_deg = direction * (measured_fraction * 180.0f - 90.0f);
-  result.neutral_angle_deg = direction * (neutral_fraction * 180.0f - 90.0f);
+  result.angle_deg = direction * (voltage_v - calibration.voltage_neutral_v) /
+                     kNominalVoltsPerDegree;
+  result.neutral_angle_deg = 0.0f;
   result.valid = true;
   return result;
 }

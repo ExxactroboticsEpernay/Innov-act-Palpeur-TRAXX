@@ -38,6 +38,12 @@ for active in ("front", "rear", "both"):
         check(pose["lateral_reference"] == f"{active}_pair", f"{active}: référence à la paire")
         check(pose["heading_deg"] is None, f"{active}: cap null, pas zéro")
 
+mock_server.STATE["config"]["activePairs"] = "front"
+arm = mock_server.simulated_state()["front_pair"]["left"]
+check(arm["arm_angle_deg"] > 90.0 and arm["angle_filtered_deg"] > 0.0,
+      "bras repoussés vers l'arrière : angle > 90°, balayage positif")
+check(mock_server.MockHandler._validate_config({"frontRestAngle": 200}) is not None,
+      "angle de repos hors 0–180° refusé")
 check(mock_server.MockHandler._validate_config({"activePairs": "middle"}) is not None,
       "activePairs invalide refusé")
 check(mock_server.MockHandler._validate_config({"activePairs": "both", "rearOffset": -0.4}) is None,

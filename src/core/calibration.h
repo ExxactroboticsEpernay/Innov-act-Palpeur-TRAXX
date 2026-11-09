@@ -11,6 +11,11 @@ enum class SensorFault {
   CalibrationInvalid
 };
 
+// Gain nominal du capteur Honeywell RTY180HVNAA : 0,5 V → 4,5 V pour 180°.
+constexpr float kNominalVoltsPerDegree = 4.0f / 180.0f;
+
+// `invert` : choisi à la calibration pour que l'angle soit positif quand le
+// bras est repoussé vers l'arrière (machine en marche avant).
 struct SensorCalibration {
   float voltage_min_v = 0.5f;
   float voltage_neutral_v = 2.5f;

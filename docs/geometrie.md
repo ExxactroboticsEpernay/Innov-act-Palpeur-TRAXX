@@ -132,10 +132,16 @@ Ordres de grandeur (objet fin, contact en bout de bras) :
 - Rang centré : chaque bras est à environ 41° de l'axe x, soit environ 49° de déflexion depuis le repos.
 - Sensibilité au centre : environ 1,9°/cm, soit environ 42 mV/cm sur le capteur.
 
-Conséquences pour le code, **pas encore traitées** :
+### Angle de repos et balayage (implémenté)
 
-1. `convertVoltageToAngle` donne un angle par rapport au milieu de course du capteur, et la géométrie l'utilise comme angle par rapport à l'axe x. Il faut introduire l'angle de repos géométrique et le sens de déflexion par capteur : `θ = θ_repos − déflexion`.
-2. Le cep glisse le long du bras pendant son passage : la distance de contact `c` varie. L'estimateur v1, qui suppose `c` fixe, est donc biaisé. L'estimateur v2 (bissectrice) ne dépend pas du point de contact; il devient le candidat naturel, à confirmer par simulation.
+- Le capteur donne un **balayage** `φ` relatif au neutre calibré (bras au repos), avec le gain nominal de la fiche Honeywell (4,0 V / 180°, soit 22,2 mV/°). Les butées capturées ne servent plus au gain, seulement au contrôle de cohérence (au moins 1 V balayé).
+- Le sens de chaque capteur est appris à l'étape de calibration « Sens » : bras tenus repoussés vers l'arrière, `φ > 0`. Les capteurs gauche et droit sont montés en miroir.
+- Angle géométrique utilisé par les estimateurs, mesuré depuis l'axe `x`, positif vers l'intérieur : `θ = θ0 + φ`, avec `θ0` = angle de repos par paire (90° par défaut). `θ > 90°` : bras repoussé vers l'arrière (marche avant). `θ < 90°` : bras basculé vers l'avant (marche arrière). La même équation couvre les deux cas, avec `s = +1`.
+- L'API publie `angle_raw_deg` / `angle_filtered_deg` = `φ` et `arm_angle_deg` = `θ`.
+
+### Encore ouvert : point de contact glissant
+
+Le cep glisse le long du bras pendant son passage, donc la distance de contact `c` varie. L'estimateur v1, qui suppose `c` fixe, est biaisé. L'estimateur v2 actuel prolonge la bissectrice jusqu'à la station `x = x_p`. Or le cep se trouve en arrière de la station, et la bissectrice n'est pas parallèle au rang quand la machine est décalée : ce prolongement introduit aussi un biais, de l'ordre de 2 cm pour 3 cm de décalage selon une estimation à la main. Une variante prenant le **sommet du V** (point de croisement des deux bras), proche du centre du cep, semble plus robuste. À comparer dans le simulateur avec un cep qui défile.
 
 ## Détection et qualité
 
@@ -153,7 +159,7 @@ Conséquences pour le code, **pas encore traitées** :
 | `pivot_spacing_m` | 0,515 m | Mesuré sur table (2026-11-09) |
 | `arm_length_m` | 0,395 m | Mesuré sur table (2026-11-09) |
 | `contact_length_m` | 0,395 m | = L par défaut; le contact glisse le long du bras, voir ci-dessous |
-| `arm_direction` | avant | À vérifier sur le montage |
+| `rest_angle_deg` (θ0) | 90° par paire | Bras perpendiculaires au repos, rappelés par 2 ressorts (confirmé) |
 | `wheelbase_m` | 2,14 m | Fiche constructeur TRAXX vignes étroites |
 | `front_pair_offset_m` | +0,40 m | Choix communiqué |
 | `rear_pair_offset_m` | -0,40 m | Position choisie pour une éventuelle deuxième paire; non utilisée dans le POC |

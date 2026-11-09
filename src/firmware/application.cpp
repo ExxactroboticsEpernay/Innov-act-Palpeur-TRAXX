@@ -57,7 +57,10 @@ struct AppConfig {
   float contact_length_m = 0.395f;
   // Décalage signé du pivot par rapport à l'essieu correspondant.
   float pair_offset_m[kPairCount] = {0.40f, -0.40f};
-  int arm_direction[kPairCount] = {1, 1};
+  // Angle géométrique des bras au repos, mesuré depuis l'axe x (avant),
+  // positif vers l'intérieur. 90° = bras perpendiculaires à la machine.
+  // Angle du bras = angle de repos + balayage capteur (positif vers l'arrière).
+  float rest_angle_deg[kPairCount] = {90.0f, 90.0f};
   bool pair_enabled[kPairCount] = {true, false};
   // Biais de centrage par paire, retranché à y_row (calibration « centre »).
   float center_bias_m[kPairCount] = {0.0f, 0.0f};
@@ -78,6 +81,7 @@ struct SensorState {
   SensorCalibration calibration;
   bool neutral_captured = false;
   bool endpoints_captured = false;
+  bool direction_captured = false;  // sens « vers l'arrière » appris
   float capture_min_v = 4.7f;
   float capture_max_v = 0.3f;
   std::array<float, kCalibrationWindowSize> history{};
@@ -152,7 +156,7 @@ PairConfig pairConfig(int pair) {
       : app_config.pair_offset_m[kRear];
   config.pivot_spacing_m = app_config.pivot_spacing_m;
   config.contact_length_m = app_config.contact_length_m;
-  config.arm_direction = app_config.arm_direction[pair];
+  config.arm_direction = 1;  // angles géométriques toujours mesurés depuis +x
   return config;
 }
 
@@ -190,8 +194,8 @@ void loadConfig() {
   app_config.contact_length_m = preferences.getFloat("contact", 0.395f);
   app_config.pair_offset_m[kFront] = preferences.getFloat("front_off", 0.40f);
   app_config.pair_offset_m[kRear] = preferences.getFloat("rear_off", -0.40f);
-  app_config.arm_direction[kFront] = preferences.getInt("arm_dir", 1);
-  app_config.arm_direction[kRear] = preferences.getInt("arm_dir_r", 1);
+  app_config.rest_angle_deg[kFront] = preferences.getFloat("rest_ang", 90.0f);
+  app_config.rest_angle_deg[kRear] = preferences.getFloat("rest_ang_r", 90.0f);
   app_config.pair_enabled[kFront] = preferences.getBool("front_en", true);
   app_config.pair_enabled[kRear] = preferences.getBool("rear_en", false);
   if (!app_config.pair_enabled[kFront] && !app_config.pair_enabled[kRear]) {
@@ -219,6 +223,7 @@ void loadConfig() {
     sensor.calibration.invert = preferences.getBool(sensorKey(index, "inv"), false);
     sensor.neutral_captured = preferences.getBool(sensorKey(index, "nset"), false);
     sensor.endpoints_captured = preferences.getBool(sensorKey(index, "eset"), false);
+    sensor.direction_captured = preferences.getBool(sensorKey(index, "dset"), false);
 #if PALPEUR_SIMULATION
     sensor.calibration.calibrated = true;
 #else
@@ -242,6 +247,8 @@ void persistCalibration() {
     preferences.putFloat(sensorKey(index, "max"), sensor.calibration.voltage_max_v);
     preferences.putBool(sensorKey(index, "nset"), sensor.neutral_captured);
     preferences.putBool(sensorKey(index, "eset"), sensor.endpoints_captured);
+    preferences.putBool(sensorKey(index, "dset"), sensor.direction_captured);
+    preferences.putBool(sensorKey(index, "inv"), sensor.calibration.invert);
   }
   preferences.putBool("center_set", center_captured[kFront]);
   preferences.putBool("center_set_r", center_captured[kRear]);
@@ -256,6 +263,7 @@ void updateCalibrationValidity() {
     SensorCalibration check = sensor.calibration;
     check.calibrated = true;
     sensor.calibration.calibrated = sensor.neutral_captured &&
+                                    sensor.direction_captured &&
                                     sensor.endpoints_captured &&
                                     isCalibrationValid(check);
     preferences.putBool(sensorKey(index, "ok"), sensor.calibration.calibrated);
@@ -269,8 +277,8 @@ bool calibrationComplete() {
   for (int index = 0; index < kSensorChannelCount; ++index) {
     if (!sensorEnabled(index)) continue;
     const SensorState& sensor = sensors[index];
-    if (!sensor.neutral_captured || !sensor.endpoints_captured ||
-        !sensor.calibration.calibrated) {
+    if (!sensor.neutral_captured || !sensor.direction_captured ||
+        !sensor.endpoints_captured || !sensor.calibration.calibrated) {
       return false;
     }
   }
@@ -282,7 +290,8 @@ void finishEndpointCapture() {
   for (int index = 0; index < kSensorChannelCount; ++index) {
     if (!sensorEnabled(index)) continue;  // paire inactive : calibration conservée
     SensorState& sensor = sensors[index];
-    sensor.endpoints_captured = sensor.capture_max_v - sensor.capture_min_v >= 2.0f;
+    // Contrôle de cohérence : au moins 1 V (≈ 45°) de course balayée.
+    sensor.endpoints_captured = sensor.capture_max_v - sensor.capture_min_v >= 1.0f;
     if (sensor.endpoints_captured) {
       sensor.calibration.voltage_min_v = sensor.capture_min_v;
       sensor.calibration.voltage_max_v = sensor.capture_max_v;
@@ -323,8 +332,13 @@ void sendError(int status, const char* message) {
   sendJson(response, status);
 }
 
-float nominalVoltageFromAngle(float angle_deg) {
-  return 0.5f + (angle_deg + 90.0f) * 4.0f / 180.0f;
+// Simulation : tension d'un capteur au neutre 2,5 V, sens non inversé.
+float simulatedVoltageFromSweep(float sweep_deg) {
+  return 2.5f + sweep_deg * kNominalVoltsPerDegree;
+}
+
+float armAngleDeg(int pair, float sweep_deg) {
+  return app_config.rest_angle_deg[pair] + sweep_deg;
 }
 
 void updateMeasurements() {
@@ -348,18 +362,22 @@ void updateMeasurements() {
   const float row_slope = std::tan(0.012f * std::sin(simulation_phase * 0.18f));
   for (int pair = 0; pair < kPairCount; ++pair) {
     if (!app_config.pair_enabled[pair]) continue;
+    // Machine en marche avant : le cep repousse les bras vers l'arrière.
+    // Le simulateur (s = -1) mesure depuis -x : angle géométrique = 180° - θ_sim.
     CircularObjectScenario scenario;
     scenario.pair = pairConfig(pair);
+    scenario.pair.arm_direction = -1;
     scenario.diameter_m = app_config.object_diameter_m;
     scenario.row_y_at_pair_m = row_y_at_middle_m +
                                row_slope * (scenario.pair.x_m - middle_x);
     scenario.row_slope = row_slope;
     const SimulatedContact simulated = simulateCircularObjectContact(scenario);
     if (simulated.valid) {
-      voltages[sensorOf(pair, kLeft)] =
-          nominalVoltageFromAngle(simulated.input.left_angle_deg);
-      voltages[sensorOf(pair, kRight)] =
-          nominalVoltageFromAngle(simulated.input.right_angle_deg);
+      const float rest = app_config.rest_angle_deg[pair];
+      voltages[sensorOf(pair, kLeft)] = simulatedVoltageFromSweep(
+          180.0f - simulated.input.left_angle_deg - rest);
+      voltages[sensorOf(pair, kRight)] = simulatedVoltageFromSweep(
+          180.0f - simulated.input.right_angle_deg - rest);
     }
   }
 #else
@@ -392,8 +410,8 @@ void updateMeasurements() {
     const SensorState& left = sensors[sensorOf(pair, kLeft)];
     const SensorState& right = sensors[sensorOf(pair, kRight)];
     PairInput input;
-    input.left_angle_deg = left.reading.filtered_angle_deg;
-    input.right_angle_deg = right.reading.filtered_angle_deg;
+    input.left_angle_deg = armAngleDeg(pair, left.reading.filtered_angle_deg);
+    input.right_angle_deg = armAngleDeg(pair, right.reading.filtered_angle_deg);
     input.left_contact = left.reading.contact;
     input.right_contact = right.reading.contact;
     input.left_sensor_valid = left.reading.valid;
@@ -413,10 +431,15 @@ void updateMeasurements() {
   ++runtime_state.sequence;
 }
 
-void fillSensorJson(JsonObject object, const SensorState& sensor) {
+// angle_raw_deg / angle_filtered_deg : balayage depuis le repos (+ = vers
+// l'arrière). arm_angle_deg : angle géométrique depuis l'axe x (repos + balayage).
+void fillSensorJson(JsonObject object, const SensorState& sensor, int pair) {
+  const bool valid = sensor.reading.valid;
   setNumber(object, "voltage_v", sensor.reading.voltage_v);
-  setNumber(object, "angle_raw_deg", sensor.reading.raw_angle_deg);
-  setNumber(object, "angle_filtered_deg", sensor.reading.filtered_angle_deg);
+  setNumber(object, "angle_raw_deg", valid ? sensor.reading.raw_angle_deg : NAN);
+  setNumber(object, "angle_filtered_deg", valid ? sensor.reading.filtered_angle_deg : NAN);
+  setNumber(object, "arm_angle_deg",
+            valid ? armAngleDeg(pair, sensor.reading.filtered_angle_deg) : NAN);
   object["contact"] = sensor.reading.contact;
   object["fault"] = !sensor.reading.valid;
 }
@@ -430,8 +453,8 @@ void fillPairJson(JsonObject object, int pair) {
   setNumber(object, "row_y_m", estimate.valid ? estimate.row_y_m : NAN);
   setNumber(object, "apparent_width_m",
             estimate.valid ? estimate.apparent_width_m : NAN);
-  fillSensorJson(object["left"].to<JsonObject>(), sensors[sensorOf(pair, kLeft)]);
-  fillSensorJson(object["right"].to<JsonObject>(), sensors[sensorOf(pair, kRight)]);
+  fillSensorJson(object["left"].to<JsonObject>(), sensors[sensorOf(pair, kLeft)], pair);
+  fillSensorJson(object["right"].to<JsonObject>(), sensors[sensorOf(pair, kRight)], pair);
 }
 
 void handleState() {
@@ -490,8 +513,8 @@ void handleConfig() {
   document["contactLength"] = app_config.contact_length_m;
   document["frontOffset"] = app_config.pair_offset_m[kFront];
   document["rearOffset"] = app_config.pair_offset_m[kRear];
-  document["frontArmDirection"] = app_config.arm_direction[kFront] > 0 ? "forward" : "backward";
-  document["rearArmDirection"] = app_config.arm_direction[kRear] > 0 ? "forward" : "backward";
+  document["frontRestAngle"] = app_config.rest_angle_deg[kFront];
+  document["rearRestAngle"] = app_config.rest_angle_deg[kRear];
   document["trackWidth"] = app_config.track_width_m;
   document["contactThreshold"] = app_config.contact_threshold_deg;
   document["hysteresis"] = app_config.contact_hysteresis_deg;
@@ -510,6 +533,17 @@ void handleCalibrationState() {
     item["enabled"] = sensorEnabled(index);
     item["neutral"] = sensor.neutral_captured;
     item["neutral_v"] = sensor.calibration.voltage_neutral_v;
+    item["direction"] = sensor.direction_captured;
+    // Course disponible vers l'arrière avant la limite électrique du capteur :
+    // un neutre trop près d'une extrémité limite la mesure.
+    if (sensor.direction_captured) {
+      const float headroom_v = sensor.calibration.invert
+          ? sensor.calibration.voltage_neutral_v - 0.5f
+          : 4.5f - sensor.calibration.voltage_neutral_v;
+      item["backward_range_deg"] = headroom_v / kNominalVoltsPerDegree;
+    } else {
+      item["backward_range_deg"] = nullptr;
+    }
     item["endpoints"] = sensor.endpoints_captured;
     item["min_v"] = sensor.calibration.voltage_min_v;
     item["max_v"] = sensor.calibration.voltage_max_v;
@@ -563,6 +597,44 @@ void handleCalibrationCapture() {
     sensor.calibration.voltage_neutral_v = mean_voltage_v;
     sensor.neutral_captured = true;
     updateCalibrationValidity();
+  } else if (std::strcmp(name, "direction") == 0) {
+    // Tous les bras actifs sont tenus repoussés vers l'arrière : le signe de
+    // l'écart au neutre donne le sens de chaque capteur (montage en miroir).
+    constexpr std::size_t kDirectionSamples = 10;
+    constexpr float kMinimumDeflectionV = 0.25f;  // ≈ 11°
+    if (voltage_history_count < kDirectionSamples) {
+      sendError(409, "Attendre quelques mesures");
+      return;
+    }
+    float deltas[kSensorChannelCount] = {};
+    for (int index = 0; index < kSensorChannelCount; ++index) {
+      if (!sensorEnabled(index)) continue;
+      const SensorState& sensor = sensors[index];
+      if (!sensor.neutral_captured) {
+        sendError(409, "Capturer d'abord le neutre de tous les bras actifs");
+        return;
+      }
+      float sum = 0.0f;
+      for (std::size_t i = 0; i < kDirectionSamples; ++i) {
+        const std::size_t slot = (voltage_history_next + kCalibrationWindowSize - 1 - i) %
+                                 kCalibrationWindowSize;
+        sum += sensor.history[slot];
+      }
+      deltas[index] = sum / kDirectionSamples - sensor.calibration.voltage_neutral_v;
+      if (!std::isfinite(deltas[index]) || std::fabs(deltas[index]) < kMinimumDeflectionV) {
+        char message[96];
+        std::snprintf(message, sizeof(message),
+                      "Bras %s pas assez repoussé vers l'arrière", kSensorNames[index]);
+        sendError(409, message);
+        return;
+      }
+    }
+    for (int index = 0; index < kSensorChannelCount; ++index) {
+      if (!sensorEnabled(index)) continue;
+      sensors[index].calibration.invert = deltas[index] < 0.0f;
+      sensors[index].direction_captured = true;
+    }
+    updateCalibrationValidity();
   } else if (std::strcmp(name, "endpoints") == 0) {
     // Balayage simultané de tous les bras des paires actives pendant 10 s.
     endpoint_capture_active = true;
@@ -610,6 +682,7 @@ void handleCalibrationReset() {
     sensors[index].calibration = SensorCalibration{};
     sensors[index].neutral_captured = false;
     sensors[index].endpoints_captured = false;
+    sensors[index].direction_captured = false;
     preferences.remove(sensorKey(index, "min"));
     preferences.remove(sensorKey(index, "neu"));
     preferences.remove(sensorKey(index, "max"));
@@ -625,19 +698,6 @@ void handleCalibrationReset() {
   updateCalibrationValidity();
   persistCalibration();
   web_server.send(200, "application/json", "{\"ok\":true}");
-}
-
-bool parseDirection(JsonVariantConst value, int& direction) {
-  const char* text = value | "";
-  if (std::strcmp(text, "forward") == 0) {
-    direction = 1;
-    return true;
-  }
-  if (std::strcmp(text, "backward") == 0) {
-    direction = -1;
-    return true;
-  }
-  return false;
 }
 
 void handleConfigUpdate() {
@@ -668,6 +728,8 @@ void handleConfigUpdate() {
       {"trackWidth", 0.5f, 3.0f, &next.track_width_m},
       {"contactThreshold", 1.0f, 30.0f, &next.contact_threshold_deg},
       {"hysteresis", 0.0f, 10.0f, &next.contact_hysteresis_deg},
+      {"frontRestAngle", 0.0f, 180.0f, &next.rest_angle_deg[kFront]},
+      {"rearRestAngle", 0.0f, 180.0f, &next.rest_angle_deg[kRear]},
   };
   for (const FloatField& field : float_fields) {
     if (!values.containsKey(field.name)) continue;
@@ -688,14 +750,6 @@ void handleConfigUpdate() {
     const int rate = values["publishRate"].as<int>();
     if (rate < 5 || rate > 200) return sendError(400, "publishRate invalide");
     next.publish_rate_hz = rate;
-  }
-  if (values.containsKey("frontArmDirection") &&
-      !parseDirection(values["frontArmDirection"], next.arm_direction[kFront])) {
-    return sendError(400, "frontArmDirection invalide");
-  }
-  if (values.containsKey("rearArmDirection") &&
-      !parseDirection(values["rearArmDirection"], next.arm_direction[kRear])) {
-    return sendError(400, "rearArmDirection invalide");
   }
   if (values.containsKey("estimator")) {
     const char* estimator = values["estimator"] | "";
@@ -729,8 +783,8 @@ void handleConfigUpdate() {
   preferences.putFloat("contact", app_config.contact_length_m);
   preferences.putFloat("front_off", app_config.pair_offset_m[kFront]);
   preferences.putFloat("rear_off", app_config.pair_offset_m[kRear]);
-  preferences.putInt("arm_dir", app_config.arm_direction[kFront]);
-  preferences.putInt("arm_dir_r", app_config.arm_direction[kRear]);
+  preferences.putFloat("rest_ang", app_config.rest_angle_deg[kFront]);
+  preferences.putFloat("rest_ang_r", app_config.rest_angle_deg[kRear]);
   preferences.putBool("front_en", app_config.pair_enabled[kFront]);
   preferences.putBool("rear_en", app_config.pair_enabled[kRear]);
   preferences.putFloat("track", app_config.track_width_m);
