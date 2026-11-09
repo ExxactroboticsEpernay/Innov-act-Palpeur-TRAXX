@@ -22,7 +22,7 @@ PAIRS = ("front", "rear")
 SENSORS = ("front_left", "front_right", "rear_left", "rear_right")
 DEFAULT_CONFIG = {
     "activePairs": "front",
-    "wheelbase": 3.85,
+    "wheelbase": 2.14,
     "pivotSpacing": 0.515,
     "armLength": 0.395,
     "contactLength": 0.395,

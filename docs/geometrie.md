@@ -31,7 +31,7 @@ x_AR = d_AR
 x_AV = W + d_AV
 ```
 
-`d_AR` et `d_AV` sont signés par rapport aux essieux correspondants. Valeurs retenues pour le cadrage : `d_AR = -0,40 m` et `d_AV = +0,40 m`. Avec `W = 3,85 m` provisoire, la distance entre paires vaut `4,65 m`.
+`d_AR` et `d_AV` sont signés par rapport aux essieux correspondants. Valeurs retenues pour le cadrage : `d_AR = -0,40 m` et `d_AV = +0,40 m`. Avec `W = 2,14 m` (fiche constructeur TRAXX vignes étroites), la distance entre paires vaut `2,94 m`.
 
 ```text
                          x vers l'avant
@@ -120,7 +120,7 @@ Dans une évolution à deux paires, les trois références sont l'essieu arrièr
 
 ### Ordre de grandeur de l'erreur angulaire
 
-Avec une séparation provisoire de 4,65 m et des erreurs de position opposées de 1,5 cm par paire, l'erreur différentielle maximale est 3 cm : `atan(0,03 / 4,65) ≈ 0,37°`. Ce calcul est un ordre de grandeur géométrique, pas une garantie de précision.
+Avec une séparation de 2,94 m et des erreurs de position opposées de 1,5 cm par paire, l’erreur différentielle maximale est 3 cm : `atan(0,03 / 2,94) ≈ 0,58°`. L’empattement court du TRAXX rend le cap plus sensible aux erreurs de chaque paire. Ce calcul est un ordre de grandeur géométrique, pas une garantie de précision.
 
 ## Montage mesuré : bras perpendiculaires au repos (à intégrer)
 
@@ -154,7 +154,7 @@ Conséquences pour le code, **pas encore traitées** :
 | `arm_length_m` | 0,395 m | Mesuré sur table (2026-11-09) |
 | `contact_length_m` | 0,395 m | = L par défaut; le contact glisse le long du bras, voir ci-dessous |
 | `arm_direction` | avant | À vérifier sur le montage |
-| `wheelbase_m` | 3,85 m | Provisoire, plage attendue 3,7–4,0 m |
+| `wheelbase_m` | 2,14 m | Fiche constructeur TRAXX vignes étroites |
 | `front_pair_offset_m` | +0,40 m | Choix communiqué |
 | `rear_pair_offset_m` | -0,40 m | Position choisie pour une éventuelle deuxième paire; non utilisée dans le POC |
 | `track_width_m` | 1,16 m | Valeur communiquée |

@@ -30,8 +30,9 @@ L'**ESP32 PLC 19R** est maintenant le candidat d'achat probable pour garder cett
 | Première paire | Avant | Choix confirmé |
 | Pivot avant | 0,40 m devant l'essieu avant | Choix confirmé |
 | Pivot arrière | 0,40 m derrière l'essieu arrière | Choix confirmé |
-| Empattement | 3,85 m | Valeur provisoire à mesurer |
-| Distance entre paires | 4,65 m avec l'empattement provisoire | Calculée pour une éventuelle évolution, non utilisée dans le POC |
+| Empattement | 2,14 m | Fiche constructeur TRAXX vignes étroites |
+| Distance entre paires | 2,94 m | Calculée : W + 0,40 + 0,40 (mode 2 paires) |
+| Largeur intérieure jambage | 0,59 m | Fiche constructeur; laisse environ 3,7 cm entre chaque pivot (b = 0,515 m) et la face intérieure du jambage |
 | Voie de la machine | 1,16 m | Valeur communiquée, définition des points de mesure à confirmer |
 | Entraxe des pivots `b` | 0,515 m | Mesuré sur table le 2026-11-09 |
 | Longueur des bras `L` | 0,395 m | Mesurée sur table le 2026-11-09 |

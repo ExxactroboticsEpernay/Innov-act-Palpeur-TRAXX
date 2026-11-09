@@ -290,13 +290,13 @@ void testGeometrySimulation() {
 void testTwoPairSimulation() {
   constexpr float kPi = 3.14159265358979323846f;
   palpeur::VehicleGeometry geometry;
-  geometry.wheelbase_m = 3.85f;
+  geometry.wheelbase_m = 2.14f;
   geometry.rear_pair_offset_m = -0.40f;
   geometry.front_pair_offset_m = 0.40f;
 
   const float heading_deg = 1.5f;              // ψ, cap machine / rang
   const float row_slope = std::tan(-heading_deg * kPi / 180.0f);  // α = -ψ
-  // Rang 5 cm à gauche de O : environ +6 cm à la paire AR, -6 cm à la paire AV.
+  // Rang 5 cm à gauche de O : environ +6 cm à la paire AR, -2 cm à la paire AV.
   const float row_y_at_rear_axle_m = 0.05f;
 
   palpeur::PairEstimate estimates[2];

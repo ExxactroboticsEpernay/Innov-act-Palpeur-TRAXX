@@ -14,7 +14,8 @@ Ce registre évite de transformer des hypothèses en caractéristiques matériel
 | Chaîne Arduino CLI pour 19R | À vérifier | Confirmer que le paquet Industrial Shields utilisé par le joystick inclut la cible exacte du 19R et ses options de partition OTA. |
 | Calibration firmware | Routes implémentées, non testées sur matériel | Neutre stable sur 2 s, balayage des butées sur 10 s et biais de centrage sont persistés en NVS; tester les seuils de stabilité et la procédure sur le PLC/capteurs réels. |
 | Brochage RTY180HVNAA | Non relevé dans ce dépôt | Utiliser le plan officiel Honeywell correspondant exactement au connecteur et à la variante N; ne pas déduire les couleurs de fils. |
-| Empattement | 3,85 m provisoire | Mesurer sur le TRAXX; la distance entre paires calculée à 4,65 m changera avec cette mesure. |
+| Empattement | 2,14 m (fiche constructeur vignes étroites) | Version vignes larges : même empattement, voie 1,40 m et jambage intérieur 0,85 m. |
+| Encombrement palpeurs | b = 0,515 m dans un jambage de 0,59 m | Environ 3,7 cm de marge de chaque côté entre pivot et jambage : vérifier au montage que bras et capteurs ne touchent pas les jambes. |
 | Entraxe des pivots | 0,515 m mesuré sur table | Revérifier une fois monté sur le TRAXX. La voie de 1,16 m n'est pas l'entraxe des pivots. |
 | Longueur des bras | 0,395 m mesurée sur table | Dimension modifiable si l'étude montre un meilleur compromis. |
 | Croisement mécanique | 28,0 cm mesuré sur table | 2L − b = 27,5 cm : bras perpendiculaires à la machine au repos. **Bloquant** : le firmware suppose aujourd'hui que le milieu de course du capteur correspond à un bras parallèle à la machine; il manque l'angle de repos et le sens de déflexion (voir géométrie). |

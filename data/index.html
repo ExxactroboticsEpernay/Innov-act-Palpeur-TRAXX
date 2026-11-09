@@ -337,7 +337,7 @@
             <div class="form-grid">
               <div class="form-section-title">Paires de palpeurs</div>
               <div class="field"><label for="activePairs">Paires actives</label><select id="activePairs" name="activePairs"><option value="front" selected>1 paire · avant</option><option value="rear">1 paire · arrière</option><option value="both">2 paires · avant + arrière</option></select><small>Avec 1 paire : décalage local, cap indisponible. Avec 2 paires : cap et décalages aux essieux.</small></div>
-              <div class="field"><label for="wheelbase"><span class="sym">W</span>Empattement (m)</label><input id="wheelbase" name="wheelbase" type="number" step="0.01" min="2" max="6" value="3.85"><small>Provisoire, à mesurer sur le TRAXX.</small></div>
+              <div class="field"><label for="wheelbase"><span class="sym">W</span>Empattement (m)</label><input id="wheelbase" name="wheelbase" type="number" step="0.01" min="2" max="6" value="2.14"><small>TRAXX vignes étroites : 2,14 m (fiche constructeur).</small></div>
               <div class="form-section-title">Paire avant</div>
               <div class="field"><label for="frontOffset"><span class="sym">d<sub>AV</sub></span>Décalage pivots / essieu avant (m)</label><input id="frontOffset" name="frontOffset" type="number" step="0.01" min="-1.5" max="1.5" value="0.40"><small>Positif = devant l’essieu.</small></div>
               <div class="field"><label for="frontArmDirection">Orientation des bras avant</label><select id="frontArmDirection" name="frontArmDirection"><option value="forward" selected>Vers l’avant</option><option value="backward">Vers l’arrière</option></select></div>
@@ -406,7 +406,7 @@
                 <line x1="96" y1="112" x2="34" y2="112" class="ext"/><line x1="96" y1="420" x2="34" y2="420" class="ext"/>
                 <line x1="40" y1="112" x2="40" y2="420"/><line x1="36" y1="116" x2="44" y2="108"/><line x1="36" y1="424" x2="44" y2="416"/>
                 <text x="47" y="262" class="dg-sym">W</text>
-                <text x="47" y="276" class="dg-val" data-value="wheelbase">3,85 m</text>
+                <text x="47" y="276" class="dg-val" data-value="wheelbase">2,14 m</text>
               </g>
               <g class="hl dim" data-param="frontOffset">
                 <line x1="176" y1="80" x2="228" y2="80" class="ext"/><line x1="207" y1="112" x2="228" y2="112" class="ext"/>
@@ -559,7 +559,7 @@
       const OBJECT_RADIUS_M = 0.05;
 
       const defaults = {
-        activePairs: "front", wheelbase: 3.85,
+        activePairs: "front", wheelbase: 2.14,
         frontOffset: 0.4, frontArmDirection: "forward",
         rearOffset: -0.4, rearArmDirection: "forward",
         pivotSpacing: 0.515, armLength: 0.395, contactLength: 0.395, trackWidth: 1.16,

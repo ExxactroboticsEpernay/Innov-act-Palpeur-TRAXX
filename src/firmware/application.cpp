@@ -51,7 +51,7 @@ const char* const kSensorKeys[kSensorChannelCount] = {"fl", "fr", "rl", "rr"};
 int sensorOf(int pair, int side) { return pair * 2 + side; }
 
 struct AppConfig {
-  float wheelbase_m = 3.85f;
+  float wheelbase_m = 2.14f;
   float pivot_spacing_m = 0.515f;
   float arm_length_m = 0.395f;
   float contact_length_m = 0.395f;
@@ -184,7 +184,7 @@ void recreateChannels() {
 }
 
 void loadConfig() {
-  app_config.wheelbase_m = preferences.getFloat("wheelbase", 3.85f);
+  app_config.wheelbase_m = preferences.getFloat("wheelbase", 2.14f);
   app_config.pivot_spacing_m = preferences.getFloat("spacing", 0.515f);
   app_config.arm_length_m = preferences.getFloat("arm_len", 0.395f);
   app_config.contact_length_m = preferences.getFloat("contact", 0.395f);

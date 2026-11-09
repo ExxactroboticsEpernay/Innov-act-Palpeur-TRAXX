@@ -42,7 +42,7 @@ struct PairEstimate {
 };
 
 struct VehicleGeometry {
-  float wheelbase_m = 3.85f;
+  float wheelbase_m = 2.14f;  // TRAXX vignes étroites (fiche constructeur)
   float rear_pair_offset_m = -0.40f;
   float front_pair_offset_m = 0.40f;
 };
