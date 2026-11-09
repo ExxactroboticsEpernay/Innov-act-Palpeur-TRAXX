@@ -99,12 +99,12 @@ def simulated_pair(pair: str, row_y_m: float, elapsed: float) -> dict:
     config = STATE["config"]
     disabled_sensor = {
         "voltage_v": None, "angle_raw_deg": None, "angle_filtered_deg": None,
-        "arm_angle_deg": None, "contact": False, "fault": False,
+        "arm_angle_deg": None, "contact": False, "fault": False, "rebound": False,
     }
     if not pair_enabled(pair):
         return {
             "enabled": False, "valid": False, "reason": "pair_disabled",
-            "x_m": round(pair_x(pair), 3), "row_y_m": None, "apparent_width_m": None,
+            "x_m": round(pair_x(pair), 3), "row_y_m": None, "lr_diff_deg": None, "apparent_width_m": None,
             "left": dict(disabled_sensor), "right": dict(disabled_sensor),
         }
 
@@ -132,10 +132,13 @@ def simulated_pair(pair: str, row_y_m: float, elapsed: float) -> dict:
             "arm_angle_deg": round(arm_angle - jitter * 0.8, 2),
             "contact": True,
             "fault": False,
+            "rebound": False,
         }
     return {
         "enabled": True, "valid": True, "reason": "none",
         "x_m": round(pair_x(pair), 3), "row_y_m": round(row_y_m, 5),
+        # Comparaison G/D (φG − φD) : > 0 = rang plus près du pivot gauche.
+        "lr_diff_deg": round(sides["left"]["angle_filtered_deg"] - sides["right"]["angle_filtered_deg"], 2),
         "apparent_width_m": round(2 * OBJECT_RADIUS_M, 4),
         "left": sides["left"], "right": sides["right"],
     }

@@ -42,7 +42,7 @@ x_AV = W + d_AV
       pivots                  O                                  pivots
 ```
 
-La voie communiquée est de 1,16 m. L'entraxe des pivots `b` est un paramètre distinct; sa valeur provisoire est 0,525 m. La voie ne doit donc pas être substituée à `b`.
+La voie communiquée est de 1,16 m. L'entraxe des pivots `b` est un paramètre distinct; elle vaut 0,515 m (mesurée sur table). La voie ne doit donc pas être substituée à `b`. Largeur intérieure du jambage : 0,59 m, soit environ 3,7 cm de marge par pivot.
 
 ## Angles et points de contact
 
@@ -54,7 +54,7 @@ u_D = (s cos(θ_D), +sin(θ_D))
 C_i = P_i + c u_i
 ```
 
-`c` est la distance effective entre le pivot et le point de contact. Valeur initiale : `c = L = 0,35 m`, à vérifier mécaniquement. Le neutre angulaire est issu de la calibration; le croisement estimé à environ 15 cm ne sert pas à calculer cet angle.
+`c` est la distance effective entre le pivot et le point de contact. Valeur initiale : `c = L = 0,395 m`; en pratique le contact glisse le long du bras. Le neutre (bras au repos, perpendiculaires) est issu de la calibration; le croisement de 28 cm en découle (2L − b = 27,5 cm).
 
 ## Estimateur v1 : points de contact effectifs
 
@@ -142,6 +142,30 @@ Ordres de grandeur (objet fin, contact en bout de bras) :
 ### Encore ouvert : point de contact glissant
 
 Le cep glisse le long du bras pendant son passage, donc la distance de contact `c` varie. L'estimateur v1, qui suppose `c` fixe, est biaisé. L'estimateur v2 actuel prolonge la bissectrice jusqu'à la station `x = x_p`. Or le cep se trouve en arrière de la station, et la bissectrice n'est pas parallèle au rang quand la machine est décalée : ce prolongement introduit aussi un biais, de l'ordre de 2 cm pour 3 cm de décalage selon une estimation à la main. Une variante prenant le **sommet du V** (point de croisement des deux bras), proche du centre du cep, semble plus robuste. À comparer dans le simulateur avec un cep qui défile.
+
+## Comparaison G/D : l'indicateur prioritaire
+
+Pour une paire, l'écart `ΔGD = φG − φD` (balayages filtrés des bras gauche et droit) est la mesure la plus directe du centrage :
+
+- **Zéro robuste** : machine centrée sur le cep, les deux bras sont repoussés de la même façon par symétrie, quels que soient le diamètre du cep et le point de contact. `ΔGD = 0` ne dépend donc ni de `c` ni de l'estimateur.
+- **Signe** : `ΔGD > 0` = bras gauche plus repoussé = cep plus près du pivot gauche = **rang à gauche, machine décalée à droite** (décalage `e < 0`).
+- **Amplitude** : le passage de `ΔGD` à des centimètres dépend du point de contact, donc de l'estimateur. C'est là que portent les incertitudes v1/v2.
+- **Simultanéité** : `ΔGD` n'est publié que si les deux bras touchent en même temps (même cep, même échantillon). Sinon il vaut `null`.
+- **Zéro calibré** : la capture « centre » enregistre aussi `ΔGD` machine centrée. Ce zéro compense les différences de montage entre gauche et droite.
+
+Publié par paire dans l'API (`lr_diff_deg`), affiché en tête de l'état des paires et enregistré dans le CSV (`gd_avant_deg`, `gd_arriere_deg`).
+
+## Claquement des ressorts
+
+Quand le cep libère un bras, les deux ressorts le ramènent brutalement au repos. Il dépasse le repos (balayage négatif), puis rebondit autour. Les bras se croisent de 28 cm au repos, ce qui peut aussi les faire se heurter. Traitement dans `SensorChannel` :
+
+- **Décision sur la médiane**, pas sur la valeur lissée : la libération coupe le contact tout de suite, sans traîner l'ancien angle. Lissage et limite de pente repartent de la valeur courante.
+- **Contact lié au côté** : un contact pris vers l'arrière tombe dès que le bras repasse de l'autre côté du repos. Le dépassement n'est jamais pris pour un contact en marche arrière.
+- **Confirmation** : un contact doit durer au moins 40 ms (2 échantillons à 50 Hz). Un choc isolé ou un pic est ignoré.
+- **Fenêtre anti-rebond** : pendant 250 ms après une libération, aucun nouveau contact. Le capteur publie `rebound = true`, affiché « rebond ».
+- **Limite de pente relevée à 300°/s** : un cep à environ 1 m/s balaie le bras d'environ 50° en 0,3 s, soit environ 160°/s. Une limite à 60°/s aurait retardé la mesure.
+
+Ces durées sont à régler sur les premiers essais : vitesse d'avance, raideur des ressorts, espacement des ceps. Côté mécanique, un amortissement (butée caoutchouc, frein visqueux) réduirait les chocs sur les capteurs et les bras.
 
 ## Détection et qualité
 

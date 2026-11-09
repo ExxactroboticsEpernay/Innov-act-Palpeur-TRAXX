@@ -42,6 +42,9 @@ mock_server.STATE["config"]["activePairs"] = "front"
 arm = mock_server.simulated_state()["front_pair"]["left"]
 check(arm["arm_angle_deg"] > 90.0 and arm["angle_filtered_deg"] > 0.0,
       "bras repoussés vers l'arrière : angle > 90°, balayage positif")
+check(mock_server.simulated_pair("front", 0.05, 0.0)["lr_diff_deg"] > 0.0
+      and mock_server.simulated_pair("front", -0.05, 0.0)["lr_diff_deg"] < 0.0,
+      "écart G/D > 0 quand le rang est à gauche, < 0 à droite")
 check(mock_server.MockHandler._validate_config({"frontRestAngle": 200}) is not None,
       "angle de repos hors 0–180° refusé")
 check(mock_server.MockHandler._validate_config({"activePairs": "middle"}) is not None,

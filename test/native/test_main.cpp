@@ -278,8 +278,8 @@ void testPose() {
 
 void testGeometrySimulation() {
   palpeur::CircularObjectScenario scenario;
-  scenario.pair.pivot_spacing_m = 0.525f;
-  scenario.pair.contact_length_m = 0.35f;
+  scenario.pair.pivot_spacing_m = 0.515f;
+  scenario.pair.contact_length_m = 0.395f;
   scenario.diameter_m = 0.10f;
   scenario.row_y_at_pair_m = 0.08f;
   scenario.row_slope = 0.02f;
@@ -333,6 +333,45 @@ void testTwoPairSimulation() {
   check(pose.lateral_valid &&
             near(pose.offset_rear_axle_m, -row_y_at_rear_axle_m, 0.02f),
         "two-pair simulation recovers rear axle offset within 2 cm");
+}
+
+// Claquement : le cep libère le bras, le ressort le ramène avec dépassement
+// et rebonds. Le contact doit tomber tout de suite et ne pas revenir pendant
+// la fenêtre anti-rebond ; un pic isolé ne doit pas créer de contact.
+void testSpringSnap() {
+  palpeur::SensorChannelConfig config;
+  config.calibration.voltage_min_v = 0.5f;
+  config.calibration.voltage_neutral_v = 2.5f;
+  config.calibration.voltage_max_v = 4.5f;
+  config.calibration.calibrated = true;
+  config.median_window = 1;
+  config.smoothing_alpha = 1.0f;
+  config.maximum_slew_deg_per_second = 10000.0f;
+  config.contact_confirm_s = 0.04f;
+  config.release_blanking_s = 0.25f;
+  palpeur::SensorChannel channel(config);
+  const float dt = 0.02f;  // 50 Hz
+  auto volts = [](float sweep_deg) { return 2.5f + sweep_deg * palpeur::kNominalVoltsPerDegree; };
+
+  channel.update(volts(0.0f), dt);
+  check(!channel.update(volts(20.0f), dt).contact, "single-sample spike is not a contact");
+  channel.update(volts(0.0f), dt);
+
+  check(!channel.update(volts(45.0f), dt).contact, "contact needs confirmation time");
+  check(channel.update(volts(45.0f), dt).contact, "sustained deflection becomes contact");
+  for (int i = 0; i < 8; ++i) channel.update(volts(45.0f), dt);
+
+  const auto snap = channel.update(volts(-8.0f), dt);  // retour + dépassement
+  check(!snap.contact && snap.rebound && std::fabs(snap.filtered_angle_deg + 8.0f) < 0.01f,
+        "release drops contact at once and filtered angle does not lag");
+  bool contact_during_rebound = false;
+  const float rebounds[] = {6.0f, -4.0f, 5.0f, -3.0f, 2.0f, 0.0f};
+  for (float sweep : rebounds) contact_during_rebound |= channel.update(volts(sweep), dt).contact;
+  check(!contact_during_rebound, "spring rebounds are ignored after release");
+
+  for (int i = 0; i < 10; ++i) channel.update(volts(0.0f), dt);  // fin de fenêtre
+  channel.update(volts(40.0f), dt);
+  check(channel.update(volts(40.0f), dt).contact, "next vine is detected after blanking");
 }
 
 // Montage réel : bras perpendiculaires au repos (θ0 = 90°), repoussés vers
@@ -404,6 +443,7 @@ int main() {
   testCanProtocol();
   testGeometrySimulation();
   testTwoPairSimulation();
+  testSpringSnap();
   testBackwardSweptPair();
   testDisabledPairReason();
   testDisabledCanBus();

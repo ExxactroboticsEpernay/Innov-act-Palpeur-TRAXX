@@ -695,9 +695,9 @@
 
       // ---------- Simulateur de page (même modèle que tools/mock_server.py) ----------
       function simulatedPair(pair, rowY, t) {
-        const empty = { voltage_v: null, angle_raw_deg: null, angle_filtered_deg: null, arm_angle_deg: null, contact: false, fault: false };
+        const empty = { voltage_v: null, angle_raw_deg: null, angle_filtered_deg: null, arm_angle_deg: null, contact: false, fault: false, rebound: false };
         if (!pairEnabled(pair)) {
-          return { enabled: false, valid: false, reason: "pair_disabled", x_m: pairX(pair), row_y_m: null, apparent_width_m: null, left: { ...empty }, right: { ...empty } };
+          return { enabled: false, valid: false, reason: "pair_disabled", x_m: pairX(pair), row_y_m: null, lr_diff_deg: null, apparent_width_m: null, left: { ...empty }, right: { ...empty } };
         }
         const half = config.pivotSpacing / 2, reach = config.contactLength;
         const clamp = (v) => Math.max(-1, Math.min(1, v));
@@ -712,9 +712,11 @@
         // Capteurs montés en miroir : la tension monte à gauche, descend à droite.
         const side = (armAngle, sign) => {
           const sweep = armAngle - rest;
-          return { voltage_v: 2.5 + sign * sweep * 4 / 180, angle_raw_deg: sweep, angle_filtered_deg: sweep - jitter * 0.8, arm_angle_deg: armAngle - jitter * 0.8, contact: true, fault: false };
+          return { voltage_v: 2.5 + sign * sweep * 4 / 180, angle_raw_deg: sweep, angle_filtered_deg: sweep - jitter * 0.8, arm_angle_deg: armAngle - jitter * 0.8, contact: true, fault: false, rebound: false };
         };
-        return { enabled: true, valid: true, reason: "none", x_m: pairX(pair), row_y_m: rowY, apparent_width_m: 2 * OBJECT_RADIUS_M, left: side(armAngles.left, 1), right: side(armAngles.right, -1) };
+        const left = side(armAngles.left, 1), right = side(armAngles.right, -1);
+        // Comparaison G/D (φG − φD) : > 0 = rang plus près du pivot gauche.
+        return { enabled: true, valid: true, reason: "none", x_m: pairX(pair), row_y_m: rowY, lr_diff_deg: left.angle_filtered_deg - right.angle_filtered_deg, apparent_width_m: 2 * OBJECT_RADIUS_M, left, right };
       }
 
       function computePose(front, rear) {
@@ -841,9 +843,15 @@
             return;
           }
           setPill($(`pairPill-${p}`), pair.valid ? "" : (pair.reason || "").includes("fault") ? "bad" : "warn", pair.valid ? "VALIDE" : "INVALIDE");
-          const arm = (side) => pair[side]?.fault ? "défaut" : pair[side]?.contact ? "contact" : "libre";
+          const arm = (side) => pair[side]?.fault ? "défaut" : pair[side]?.contact ? "contact" : pair[side]?.rebound ? "rebond" : "libre";
           const width = isNum(pair.apparent_width_m) ? ` · largeur ${(pair.apparent_width_m * 100).toFixed(1)} cm` : "";
-          $(`pairMeta-${p}`).textContent = pair.valid ? `G : ${arm("left")} · D : ${arm("right")}${width}` : (REASONS[pair.reason] || pair.reason);
+          // Comparaison G/D en tête : c'est l'indicateur le plus direct du centrage.
+          const diff = isNum(pair.lr_diff_deg)
+            ? `<strong>G−D ${signed(pair.lr_diff_deg, 1)}°</strong> (${pair.lr_diff_deg > 0.5 ? "rang à gauche" : pair.lr_diff_deg < -0.5 ? "rang à droite" : "centré"}) · `
+            : "";
+          $(`pairMeta-${p}`).innerHTML = pair.valid
+            ? `${diff}G : ${arm("left")} · D : ${arm("right")}${escapeHtml(width)}`
+            : escapeHtml(REASONS[pair.reason] || pair.reason);
         });
 
         // Capteurs
@@ -1205,7 +1213,8 @@
         const row = {
           time: new Date(stamp).toISOString(), simulation: state.simulation !== false, pairs: state.active_pairs || config.activePairs,
           offset: pose.lateral_valid ? pose.lateral_offset_m * 100 : null, reference: pose.lateral_reference || "",
-          heading: pose.heading_valid ? pose.heading_deg : null
+          heading: pose.heading_valid ? pose.heading_deg : null,
+          lrFront: state.front_pair?.lr_diff_deg ?? null, lrRear: state.rear_pair?.lr_diff_deg ?? null
         };
         SENSOR_IDS.forEach((id) => { const sensor = sensorOf(state, id) || {}; row[`${id}_deg`] = sensor.angle_filtered_deg ?? null; row[`${id}_v`] = sensor.voltage_v ?? null; });
         csvBuffer.push(row);
@@ -1216,9 +1225,9 @@
       $("downloadCsv").addEventListener("click", () => {
         if (!csvBuffer.length) { toast("Aucun échantillon enregistré."); return; }
         const cell = (value, digits) => isNum(value) ? value.toFixed(digits) : "";
-        const header = ["horodatage", "simulation", "paires", "decalage_cm", "reference", "cap_deg", ...SENSOR_IDS.flatMap((id) => [`balayage_${id}_deg`, `tension_${id}_v`])];
+        const header = ["horodatage", "simulation", "paires", "decalage_cm", "reference", "cap_deg", "gd_avant_deg", "gd_arriere_deg", ...SENSOR_IDS.flatMap((id) => [`balayage_${id}_deg`, `tension_${id}_v`])];
         const rows = [header.join(";"), ...csvBuffer.map((item) => [
-          item.time, item.simulation ? 1 : 0, item.pairs, cell(item.offset, 2), item.reference, cell(item.heading, 3),
+          item.time, item.simulation ? 1 : 0, item.pairs, cell(item.offset, 2), item.reference, cell(item.heading, 3), cell(item.lrFront, 2), cell(item.lrRear, 2),
           ...SENSOR_IDS.flatMap((id) => [cell(item[`${id}_deg`], 2), cell(item[`${id}_v`], 3)])
         ].join(";"))];
         downloadBlob(new Blob(["﻿" + rows.join("\r\n")], { type: "text/csv;charset=utf-8" }), "palpeur-traxx-mesures.csv");

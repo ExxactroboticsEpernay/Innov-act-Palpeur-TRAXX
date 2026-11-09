@@ -64,11 +64,13 @@ struct AppConfig {
   bool pair_enabled[kPairCount] = {true, false};
   // Biais de centrage par paire, retranché à y_row (calibration « centre »).
   float center_bias_m[kPairCount] = {0.0f, 0.0f};
+  // Écart G/D (φG − φD) mesuré machine centrée : zéro de la comparaison G/D.
+  float center_lr_diff_deg[kPairCount] = {0.0f, 0.0f};
   float track_width_m = 1.16f;
   float contact_threshold_deg = 3.0f;
   float contact_hysteresis_deg = 1.0f;
   float smoothing_alpha = 0.25f;
-  float maximum_slew_deg_per_second = 60.0f;
+  float maximum_slew_deg_per_second = 300.0f;
   float object_diameter_m = 0.10f;
   int median_window = 5;
   int publish_rate_hz = 50;
@@ -92,6 +94,9 @@ struct SensorState {
 struct RuntimeState {
   PairEstimate pairs[kPairCount];
   float raw_row_y_m[kPairCount] = {0.0f, 0.0f};  // avant correction du biais
+  // Comparaison G/D brute (φG − φD), valable seulement si les deux bras de la
+  // paire touchent le même cep au même instant.
+  float raw_lr_diff_deg[kPairCount] = {NAN, NAN};
   RowPose pose;
   std::uint32_t sequence = 0;
   bool simulated = PALPEUR_SIMULATION != 0;
@@ -203,11 +208,13 @@ void loadConfig() {
   }
   app_config.center_bias_m[kFront] = preferences.getFloat("center", 0.0f);
   app_config.center_bias_m[kRear] = preferences.getFloat("center_r", 0.0f);
+  app_config.center_lr_diff_deg[kFront] = preferences.getFloat("cdiff", 0.0f);
+  app_config.center_lr_diff_deg[kRear] = preferences.getFloat("cdiff_r", 0.0f);
   app_config.track_width_m = preferences.getFloat("track", 1.16f);
   app_config.contact_threshold_deg = preferences.getFloat("threshold", 3.0f);
   app_config.contact_hysteresis_deg = preferences.getFloat("hyst", 1.0f);
   app_config.smoothing_alpha = preferences.getFloat("smooth", 0.25f);
-  app_config.maximum_slew_deg_per_second = preferences.getFloat("slew", 60.0f);
+  app_config.maximum_slew_deg_per_second = preferences.getFloat("slew", 300.0f);
   app_config.object_diameter_m = preferences.getFloat("diameter", 0.10f);
   app_config.median_window = preferences.getInt("median", 5);
   app_config.publish_rate_hz = preferences.getInt("rate", 50);
@@ -405,6 +412,7 @@ void updateMeasurements() {
       estimate = PairEstimate{};
       estimate.x_m = config.x_m;
       estimate.reason = InvalidReason::PairDisabled;
+      runtime_state.raw_lr_diff_deg[pair] = NAN;
       continue;
     }
     const SensorState& left = sensors[sensorOf(pair, kLeft)];
@@ -422,6 +430,11 @@ void updateMeasurements() {
         ? BisectorEstimator().estimate(config, input)
         : ContactPointEstimator().estimate(config, input);
     runtime_state.raw_row_y_m[pair] = estimate.row_y_m;
+    const bool both_in_contact = left.reading.valid && right.reading.valid &&
+                                 left.reading.contact && right.reading.contact;
+    runtime_state.raw_lr_diff_deg[pair] = both_in_contact
+        ? left.reading.filtered_angle_deg - right.reading.filtered_angle_deg
+        : NAN;
     if (estimate.valid) estimate.row_y_m -= app_config.center_bias_m[pair];
   }
 
@@ -442,6 +455,7 @@ void fillSensorJson(JsonObject object, const SensorState& sensor, int pair) {
             valid ? armAngleDeg(pair, sensor.reading.filtered_angle_deg) : NAN);
   object["contact"] = sensor.reading.contact;
   object["fault"] = !sensor.reading.valid;
+  object["rebound"] = sensor.reading.rebound;
 }
 
 void fillPairJson(JsonObject object, int pair) {
@@ -451,6 +465,10 @@ void fillPairJson(JsonObject object, int pair) {
   object["reason"] = reasonName(estimate.reason);
   setNumber(object, "x_m", estimate.x_m);
   setNumber(object, "row_y_m", estimate.valid ? estimate.row_y_m : NAN);
+  // Comparaison G/D : > 0 = bras gauche plus repoussé = rang plus près du
+  // pivot gauche = machine décalée à droite. Zéro fixé par la calibration centre.
+  setNumber(object, "lr_diff_deg",
+            runtime_state.raw_lr_diff_deg[pair] - app_config.center_lr_diff_deg[pair]);
   setNumber(object, "apparent_width_m",
             estimate.valid ? estimate.apparent_width_m : NAN);
   fillSensorJson(object["left"].to<JsonObject>(), sensors[sensorOf(pair, kLeft)], pair);
@@ -665,10 +683,15 @@ void handleCalibrationCapture() {
     for (int pair = 0; pair < kPairCount; ++pair) {
       if (!app_config.pair_enabled[pair]) continue;
       app_config.center_bias_m[pair] = runtime_state.raw_row_y_m[pair];
+      if (std::isfinite(runtime_state.raw_lr_diff_deg[pair])) {
+        app_config.center_lr_diff_deg[pair] = runtime_state.raw_lr_diff_deg[pair];
+      }
       center_captured[pair] = true;
     }
     preferences.putFloat("center", app_config.center_bias_m[kFront]);
     preferences.putFloat("center_r", app_config.center_bias_m[kRear]);
+    preferences.putFloat("cdiff", app_config.center_lr_diff_deg[kFront]);
+    preferences.putFloat("cdiff_r", app_config.center_lr_diff_deg[kRear]);
   } else {
     sendError(400, "Étape inconnue");
     return;
@@ -690,11 +713,14 @@ void handleCalibrationReset() {
   for (int pair = 0; pair < kPairCount; ++pair) {
     center_captured[pair] = false;
     app_config.center_bias_m[pair] = 0.0f;
+    app_config.center_lr_diff_deg[pair] = 0.0f;
   }
   endpoint_capture_active = false;
   voltage_history_count = 0;
   preferences.putFloat("center", 0.0f);
   preferences.putFloat("center_r", 0.0f);
+  preferences.putFloat("cdiff", 0.0f);
+  preferences.putFloat("cdiff_r", 0.0f);
   updateCalibrationValidity();
   persistCalibration();
   web_server.send(200, "application/json", "{\"ok\":true}");

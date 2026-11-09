@@ -8,6 +8,7 @@ Projet de mesure en lecture seule du décalage latéral et du cap du TRAXX dans 
 
 - Mesurer et afficher le décalage latéral du TRAXX au niveau de la paire avant.
 - Ne pas estimer le cap avec une seule paire : le cap reste explicitement indisponible.
+- Comparer en priorité les deux bras d'une paire (écart G/D) : zéro robuste quand la machine est centrée, signe = côté du décalage.
 - Afficher les mesures et diagnostics sur une page web locale, utilisable hors connexion Internet.
 - Préparer une interface CAN désactivée par défaut pour une future intégration aux rosbag du TRAXX.
 - Comparer par simulation les estimateurs géométriques v1 et v2 avant de retenir celui qui convient.
@@ -33,10 +34,11 @@ L'**ESP32 PLC 19R** est maintenant le candidat d'achat probable pour garder cett
 | Empattement | 2,14 m | Fiche constructeur TRAXX vignes étroites |
 | Distance entre paires | 2,94 m | Calculée : W + 0,40 + 0,40 (mode 2 paires) |
 | Largeur intérieure jambage | 0,59 m | Fiche constructeur; laisse environ 3,7 cm entre chaque pivot (b = 0,515 m) et la face intérieure du jambage |
-| Voie de la machine | 1,16 m | Valeur communiquée, définition des points de mesure à confirmer |
+| Voie de la machine | 1,16 m | Fiche constructeur TRAXX vignes étroites (vignes larges : 1,40 m) |
 | Entraxe des pivots `b` | 0,515 m | Mesuré sur table le 2026-11-09 |
 | Longueur des bras `L` | 0,395 m | Mesurée sur table le 2026-11-09 |
 | Croisement des bras au repos | 28,0 cm | Mesuré sur table; cohérent avec des bras perpendiculaires à la machine au repos (2L − b = 27,5 cm) |
+| Bras au repos | Perpendiculaires (θ0 = 90°), 2 ressorts de rappel | Repoussés vers l'arrière en marche avant, libres vers l'avant en marche arrière; anti-claquement logiciel |
 | PLC candidat | Industrial Shields ESP32 PLC 19R | Achat probable; référence et variante à confirmer |
 | Acquisition initiale | Deux capteurs pour une paire | Compatible avec les deux voies analogiques documentées pour le PLC du projet joystick |
 | Évolution éventuelle | Deuxième paire | À décider après essais; le 19R est le candidat, sous réserve de vérifier ses voies analogiques |

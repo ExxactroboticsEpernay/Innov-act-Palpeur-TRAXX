@@ -17,8 +17,8 @@ enum class InvalidReason {
 
 struct PairConfig {
   float x_m = 0.0f;
-  float pivot_spacing_m = 0.525f;
-  float contact_length_m = 0.35f;
+  float pivot_spacing_m = 0.515f;   // mesuré sur table (2026-11-09)
+  float contact_length_m = 0.395f;  // = L mesurée
   int arm_direction = 1;
 };
 
