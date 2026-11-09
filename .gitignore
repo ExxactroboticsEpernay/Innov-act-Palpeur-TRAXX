@@ -1,0 +1,8 @@
+build/
+.pio/
+__pycache__/
+*.py[cod]
+*.bin
+*.elf
+*.map
+geometry-study.csv

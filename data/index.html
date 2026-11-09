@@ -1,0 +1,799 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f2f3ef">
+  <title>Palpeur TRAXX — POC</title>
+  <link rel="icon" href="data:,">
+  <style>
+    :root {
+      color-scheme: light;
+      --page: #f2f3ef;
+      --panel: #fff;
+      --panel-soft: #f7f8f5;
+      --ink: #17201c;
+      --ink-soft: #47544c;
+      --muted: #78827b;
+      --line: #dce2dc;
+      --line-strong: #bec9c0;
+      --green: #237b54;
+      --green-soft: #e6f3eb;
+      --blue: #2867a7;
+      --blue-soft: #e9f1fb;
+      --orange: #c76b2c;
+      --orange-soft: #fbefe4;
+      --red: #b94343;
+      --red-soft: #f9e9e7;
+      --shadow: 0 1px 2px rgba(21, 39, 27, .05);
+      --mono: "Cascadia Mono", "Cascadia Code", Consolas, monospace;
+      --sans: "Segoe UI", system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html { background: var(--page); }
+    body { margin: 0; color: var(--ink); background: var(--page); font: 14px/1.45 var(--sans); -webkit-font-smoothing: antialiased; }
+    button, input, select { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    [hidden] { display: none !important; }
+    .mono, .number { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+    .topbar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 18px; min-height: 62px; padding: 10px 24px; background: var(--panel); border-bottom: 1px solid var(--line); }
+    .brand { display: flex; align-items: center; gap: 11px; min-width: 220px; }
+    .brand-mark { display: grid; width: 36px; height: 36px; place-items: center; color: white; background: var(--ink); border-radius: 8px; }
+    .brand-mark svg { width: 22px; height: 22px; }
+    .brand-title { margin: 0; font-size: 15px; font-weight: 700; }
+    .brand-subtitle { margin: 1px 0 0; color: var(--muted); font-size: 11px; }
+    .top-status { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+    .chip { display: inline-flex; align-items: center; gap: 7px; min-height: 27px; padding: 4px 10px; color: var(--ink-soft); background: #edf0ec; border-radius: 999px; font-size: 12px; white-space: nowrap; }
+    .chip .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+    .chip.sim { color: #155e83; background: #e6f2f7; }
+    .chip.good { color: #17653f; background: var(--green-soft); }
+    .chip.warn { color: #865017; background: #fbf1db; }
+    .tabbar { display: flex; gap: 4px; padding: 0 24px; overflow-x: auto; background: var(--panel); border-bottom: 1px solid var(--line); scrollbar-width: thin; }
+    .tab { display: inline-flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 13px; border: 0; border-bottom: 2px solid transparent; color: var(--muted); background: transparent; font-size: 13px; font-weight: 600; white-space: nowrap; }
+    .tab:hover { color: var(--ink); background: var(--panel-soft); }
+    .tab[aria-selected="true"] { color: var(--green); border-bottom-color: var(--green); }
+    .tab svg { width: 16px; height: 16px; }
+    main { width: min(1440px, 100%); margin: 0 auto; padding: 22px 24px 56px; }
+    .demo-banner { display: flex; align-items: flex-start; gap: 11px; margin: 0 0 18px; padding: 12px 14px; color: #175c7c; background: var(--blue-soft); border: 1px solid #c9ddef; border-radius: 7px; }
+    .demo-banner svg { flex: none; width: 18px; height: 18px; margin-top: 1px; }
+    .demo-banner strong { display: block; font-size: 13px; }
+    .demo-banner p { margin: 2px 0 0; color: #344c5c; font-size: 12px; }
+    .view-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin: 4px 0 18px; }
+    .eyebrow { margin: 0 0 3px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    h1 { margin: 0; font-size: 24px; line-height: 1.15; font-weight: 680; }
+    .view-desc { margin: 5px 0 0; color: var(--muted); font-size: 13px; }
+    .head-actions { display: flex; align-items: center; gap: 8px; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 35px; padding: 0 12px; color: var(--ink); background: var(--panel); border: 1px solid var(--line-strong); border-radius: 6px; font-size: 12px; font-weight: 650; white-space: nowrap; }
+    .btn:hover { background: var(--panel-soft); }
+    .btn.primary { color: white; background: var(--green); border-color: var(--green); }
+    .btn.primary:hover { background: #1b6745; }
+    .btn.subtle { color: var(--blue); border-color: #b9cee4; background: var(--blue-soft); }
+    .btn.danger { color: var(--red); border-color: #e7c2bf; background: var(--red-soft); }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .btn svg { width: 15px; height: 15px; }
+    .live-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(290px, .85fr); gap: 14px; align-items: stretch; }
+    .panel { min-width: 0; padding: 17px; background: var(--panel); border: 1px solid var(--line); border-radius: 7px; box-shadow: var(--shadow); }
+    .panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+    .panel-heading h2 { margin: 0; font-size: 14px; font-weight: 700; }
+    .panel-heading p { margin: 3px 0 0; color: var(--muted); font-size: 11px; }
+    .section-label { color: var(--muted); font-size: 10px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+    .metrics { display: grid; grid-template-columns: 1.1fr 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+    .metric { min-width: 0; padding: 13px 14px; background: var(--panel-soft); border: 1px solid var(--line); border-radius: 6px; }
+    .metric.primary-metric { background: #eff6f0; border-color: #d1e4d5; }
+    .metric-name { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; font-weight: 650; }
+    .metric-value { margin-top: 7px; color: var(--ink); font-size: clamp(24px, 3vw, 36px); font-weight: 720; line-height: 1; white-space: nowrap; }
+    .metric-value small { margin-left: 3px; color: var(--ink-soft); font: 600 13px var(--sans); }
+    .metric-note { margin-top: 6px; color: var(--muted); font-size: 11px; }
+    .not-available { color: #777d79; font: 650 16px var(--sans); white-space: normal; }
+    .status-inline { display: inline-flex; align-items: center; gap: 6px; color: var(--green); font-size: 12px; font-weight: 700; }
+    .status-inline .dot { width: 8px; height: 8px; background: currentColor; border-radius: 50%; }
+    .scene-wrap { position: relative; overflow: hidden; background: #f7f8f5; border: 1px solid var(--line); border-radius: 6px; }
+    .scene-topline { display: flex; justify-content: space-between; gap: 10px; padding: 9px 11px 0; color: var(--muted); font-size: 10px; }
+    #sceneCanvas { display: block; width: 100%; height: 270px; }
+    .scene-caption { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 8px 11px; border-top: 1px solid var(--line); color: var(--ink-soft); font-size: 10px; }
+    .legend { display: inline-flex; align-items: center; gap: 6px; }
+    .legend-mark { width: 14px; height: 3px; background: var(--green); }
+    .legend-mark.arm { background: var(--orange); }
+    .legend-mark.machine { width: 10px; height: 10px; background: #41534a; border-radius: 2px; }
+    .side-stack { display: grid; grid-template-rows: auto auto 1fr; gap: 14px; }
+    .pair-state { display: flex; align-items: center; justify-content: space-between; padding: 11px 0; border-top: 1px solid var(--line); }
+    .pair-state:first-of-type { border-top: 0; }
+    .pair-name { font-size: 13px; font-weight: 700; }
+    .pair-meta { margin-top: 2px; color: var(--muted); font-size: 11px; }
+    .state-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; color: #17653f; background: var(--green-soft); border-radius: 999px; font-size: 10px; font-weight: 700; white-space: nowrap; }
+    .state-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .sensor-mini { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .sensor-cell { padding: 10px; background: var(--panel-soft); border: 1px solid var(--line); border-radius: 5px; }
+    .sensor-title { color: var(--muted); font-size: 10px; font-weight: 700; }
+    .sensor-reading { margin-top: 5px; font: 700 16px var(--mono); }
+    .sensor-detail { margin-top: 3px; color: var(--muted); font-size: 10px; }
+    .chart-panel { margin-top: 14px; }
+    #trendCanvas { display: block; width: 100%; height: 170px; }
+    .chart-legend { display: flex; align-items: center; gap: 14px; color: var(--muted); font-size: 11px; }
+    .line-key { display: inline-flex; align-items: center; gap: 6px; }
+    .line-key i { width: 15px; height: 3px; background: var(--green); }
+    .line-key.angle i { background: var(--orange); }
+    .split-layout { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(280px, .75fr); gap: 14px; }
+    .table-scroll { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th { padding: 9px 10px; color: var(--muted); background: var(--panel-soft); font-size: 10px; font-weight: 750; text-align: left; text-transform: uppercase; letter-spacing: .04em; }
+    td { padding: 11px 10px; border-bottom: 1px solid var(--line); }
+    tr:last-child td { border-bottom: 0; }
+    .sensor-name { font-weight: 700; }
+    .subtle-text { color: var(--muted); font-size: 11px; }
+    .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px 16px; }
+    .field { min-width: 0; }
+    .field label { display: block; margin-bottom: 5px; color: var(--ink-soft); font-size: 11px; font-weight: 650; }
+    .field input, .field select { width: 100%; min-height: 37px; padding: 7px 9px; background: white; border: 1px solid var(--line-strong); border-radius: 5px; }
+    .field input:focus, .field select:focus { outline: 2px solid #b6d2c0; border-color: var(--green); }
+    .field small { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; }
+    .form-section-title { grid-column: 1 / -1; margin: 7px 0 -3px; padding-bottom: 7px; color: var(--ink); border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 750; }
+    .check-row { display: flex; align-items: center; gap: 9px; min-height: 37px; color: var(--ink-soft); font-size: 12px; }
+    .check-row input { width: 16px; height: 16px; accent-color: var(--green); }
+    .form-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+    .form-note { margin: 12px 0 0; padding: 10px 11px; color: #5e4d34; background: #fbf4e7; border-left: 3px solid #d5a657; font-size: 11px; }
+    .cal-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0 0 17px; }
+    .cal-step { padding: 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel-soft); }
+    .cal-step strong { display: block; font-size: 11px; }
+    .cal-step span { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; }
+    .cal-value { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px; padding: 11px 0; border-top: 1px solid var(--line); }
+    .cal-value:first-of-type { border-top: 0; }
+    .cal-value strong { display: block; font-size: 12px; }
+    .cal-value small { color: var(--muted); font-size: 10px; }
+    .cal-result { color: var(--green); font: 650 12px var(--mono); }
+    .diag-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .diag-item { padding: 12px; background: var(--panel-soft); border: 1px solid var(--line); border-radius: 5px; }
+    .diag-label { color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; }
+    .diag-value { margin-top: 6px; font: 700 15px var(--mono); }
+    .diag-sub { margin-top: 4px; color: var(--muted); font-size: 10px; }
+    .toast { position: fixed; right: 18px; bottom: 18px; z-index: 10; max-width: min(380px, calc(100vw - 36px)); padding: 11px 14px; color: white; background: #20342a; border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,.18); font-size: 12px; }
+    .footer-note { margin-top: 16px; color: var(--muted); font-size: 10px; }
+    @media (max-width: 900px) {
+      .live-grid { grid-template-columns: 1fr; }
+      .side-stack { grid-template-columns: 1fr 1fr; grid-template-rows: auto auto; }
+      .side-stack > .panel:last-child { grid-column: 1 / -1; }
+      .split-layout { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 620px) {
+      .topbar { min-height: 56px; gap: 8px; padding: 8px 12px; flex-wrap: wrap; }
+      .brand { min-width: 0; }
+      .brand-mark { width: 32px; height: 32px; }
+      .brand-subtitle { display: none; }
+      .top-status { gap: 5px; }
+      .chip { min-height: 25px; padding: 3px 7px; font-size: 10px; }
+      .chip.optional { display: none; }
+      .tabbar { padding: 0 8px; }
+      .tab { min-height: 45px; padding: 0 10px; font-size: 11px; }
+      .tab svg { display: none; }
+      main { padding: 14px 12px 36px; }
+      .view-head { align-items: flex-start; flex-direction: column; gap: 10px; }
+      h1 { font-size: 21px; }
+      .head-actions { width: 100%; }
+      .metrics { grid-template-columns: 1fr 1fr; }
+      .metric.primary-metric { grid-column: 1 / -1; }
+      .metric-value { font-size: 28px; }
+      .side-stack { grid-template-columns: 1fr; }
+      .side-stack > .panel:last-child { grid-column: auto; }
+      #sceneCanvas { height: 230px; }
+      .panel { padding: 13px; }
+      .form-grid { grid-template-columns: 1fr; }
+      .form-section-title { grid-column: auto; }
+      .cal-steps { grid-template-columns: 1fr; }
+      .diag-grid { grid-template-columns: 1fr 1fr; }
+      .chart-legend { gap: 8px; flex-wrap: wrap; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19V5h14v14z"/><path d="M8 16l3-4 2 2 3-5"/><circle cx="8" cy="16" r="1" fill="currentColor"/><circle cx="16" cy="9" r="1" fill="currentColor"/></svg>
+      </div>
+      <div>
+        <p class="brand-title">Palpeur TRAXX</p>
+        <p class="brand-subtitle">POC · paire avant</p>
+      </div>
+    </div>
+    <div class="top-status">
+      <span class="chip sim" id="connectionChip"><i class="dot"></i>Simulation locale</span>
+      <span class="chip warn optional"><i class="dot"></i>PLC non connecté</span>
+      <span class="chip optional">FW —</span>
+    </div>
+  </header>
+
+  <nav class="tabbar" role="tablist" aria-label="Vues du palpeur">
+    <button class="tab" role="tab" aria-selected="true" data-view="live"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg>Live</button>
+    <button class="tab" role="tab" aria-selected="false" data-view="sensors"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 4v16M19 4v16M5 8h14M5 16h14"/><circle cx="12" cy="8" r="2"/><circle cx="12" cy="16" r="2"/></svg>Capteurs</button>
+    <button class="tab" role="tab" aria-selected="false" data-view="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>Paramètres</button>
+    <button class="tab" role="tab" aria-selected="false" data-view="calibration"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 20h16M6 16l4-8 3 5 2-3 3 6"/><circle cx="10" cy="8" r="1.5"/></svg>Calibration</button>
+    <button class="tab" role="tab" aria-selected="false" data-view="diagnostics"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/><circle cx="12" cy="12" r="4"/></svg>Diagnostic</button>
+  </nav>
+
+  <main>
+    <div class="demo-banner" role="status">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+      <div><strong>Maquette interactive — données simulées</strong><p>En ouverture directe, les valeurs sont générées par le simulateur de page. Le cœur C++ implémente les estimateurs, mais cette maquette locale ne reçoit pas de mesures matérielles.</p></div>
+    </div>
+
+    <section class="view" id="view-live" role="tabpanel">
+      <div class="view-head">
+        <div><p class="eyebrow">Vue principale · paire avant</p><h1>Position dans le rang</h1><p class="view-desc">Lecture locale simulée · station de mesure à l’avant du TRAXX</p></div>
+        <div class="head-actions"><button class="btn subtle" id="toggleSimulation" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 5v14l11-7z"/></svg>Mettre en pause</button></div>
+      </div>
+      <div class="metrics">
+        <div class="metric primary-metric"><div class="metric-name">Décalage latéral simulé</div><div class="metric-value number" id="offsetValue">+0.0<small>cm</small></div><div class="metric-note">positif = machine à gauche du rang · valeur de démonstration</div></div>
+        <div class="metric"><div class="metric-name">Cap machine / rang</div><div class="metric-value not-available">Indisponible</div><div class="metric-note">Une seule paire active</div></div>
+        <div class="metric"><div class="metric-name">État paire avant</div><div class="metric-value" style="font-size:20px"><span class="status-inline"><i class="dot"></i>Double contact</span></div><div class="metric-note" id="sampleTime">Mise à jour —</div></div>
+      </div>
+
+      <div class="live-grid">
+        <div class="panel">
+          <div class="panel-heading"><div><h2>Vue de dessus</h2><p>Schéma indicatif, non à l’échelle</p></div><span class="chip sim">Rang simulé</span></div>
+          <div class="scene-wrap"><div class="scene-topline"><span>AVANT ↑</span><span>Machine · repère local</span></div><canvas id="sceneCanvas" aria-label="Schéma de la machine, des palpeurs et du rang simulé"></canvas><div class="scene-caption"><span class="legend"><i class="legend-mark"></i>Axe du rang</span><span class="legend"><i class="legend-mark arm"></i>Bras de palpage</span><span class="legend"><i class="legend-mark machine"></i>TRAXX</span></div></div>
+        </div>
+        <div class="side-stack">
+          <div class="panel">
+            <div class="panel-heading"><div><h2>État de la paire</h2><p>Deux capteurs · paire avant active</p></div><span class="state-pill"><i class="dot"></i>VALIDE</span></div>
+            <div class="pair-state"><div><div class="pair-name">Bras gauche</div><div class="pair-meta" id="leftContactMeta">Contact détecté</div></div><span class="state-pill"><i class="dot"></i>CONTACT</span></div>
+            <div class="pair-state"><div><div class="pair-name">Bras droit</div><div class="pair-meta" id="rightContactMeta">Contact détecté</div></div><span class="state-pill"><i class="dot"></i>CONTACT</span></div>
+          </div>
+          <div class="panel">
+            <div class="panel-heading"><div><h2>Mesures live</h2><p>Valeurs brutes simulées</p></div><span class="section-label">50 Hz cible</span></div>
+            <div class="sensor-mini">
+              <div class="sensor-cell"><div class="sensor-title">GAUCHE · ANGLE</div><div class="sensor-reading" id="leftAngle">+24.0°</div><div class="sensor-detail" id="leftVoltage">2.94 V</div></div>
+              <div class="sensor-cell"><div class="sensor-title">DROIT · ANGLE</div><div class="sensor-reading" id="rightAngle">−24.0°</div><div class="sensor-detail" id="rightVoltage">2.06 V</div></div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-heading"><div><h2>Qualité de mesure</h2><p>Indicateurs de démonstration</p></div></div>
+            <div class="pair-state"><div class="pair-name">Capteurs</div><span class="state-pill"><i class="dot"></i>OK</span></div>
+            <div class="pair-state"><div class="pair-name">Calibration</div><span class="chip warn" id="calibrationBadge">À effectuer</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="panel chart-panel">
+        <div class="panel-heading"><div><h2>Tendance récente</h2><p>Historique de démonstration · 30 secondes</p></div><div class="chart-legend"><span class="line-key"><i></i>Décalage (cm)</span><span class="line-key angle"><i></i>Angle gauche (°)</span></div></div>
+        <canvas id="trendCanvas" aria-label="Courbe simulée du décalage et de l’angle"></canvas>
+      </div>
+    </section>
+
+    <section class="view" id="view-sensors" role="tabpanel" hidden>
+      <div class="view-head"><div><p class="eyebrow">Acquisition · deux voies</p><h1>Capteurs</h1><p class="view-desc">Données simulées pour le POC de la paire avant.</p></div><span class="chip sim">Simulation locale</span></div>
+      <div class="panel">
+        <div class="panel-heading"><div><h2>État des voies analogiques</h2><p>Les tensions affichées ne proviennent pas du matériel.</p></div></div>
+        <div class="table-scroll"><table><thead><tr><th>Capteur</th><th>Tension</th><th>Angle brut</th><th>Angle filtré</th><th>Contact</th><th>Défaut</th></tr></thead><tbody>
+          <tr><td><span class="sensor-name">Avant gauche</span><br><span class="subtle-text">Canal 1 · non raccordé</span></td><td class="number" id="tableLeftVoltage">2.94 V</td><td class="number" id="tableLeftRaw">+24.0°</td><td class="number" id="tableLeftFiltered">+23.8°</td><td><span class="state-pill"><i class="dot"></i>Contact</span></td><td><span class="subtle-text">Aucun</span></td></tr>
+          <tr><td><span class="sensor-name">Avant droit</span><br><span class="subtle-text">Canal 2 · non raccordé</span></td><td class="number" id="tableRightVoltage">2.06 V</td><td class="number" id="tableRightRaw">−24.0°</td><td class="number" id="tableRightFiltered">−23.7°</td><td><span class="state-pill"><i class="dot"></i>Contact</span></td><td><span class="subtle-text">Aucun</span></td></tr>
+        </tbody></table></div>
+      </div>
+      <div class="split-layout" style="margin-top:14px">
+        <div class="panel"><div class="panel-heading"><div><h2>Conversion nominale</h2><p>Repère indicatif du capteur RTY180HVNAA, avant calibration.</p></div></div><div class="form-grid"><div class="diag-item"><div class="diag-label">Plage nominale</div><div class="diag-value">0.5–4.5 V</div><div class="diag-sub">180° de course annoncés</div></div><div class="diag-item"><div class="diag-label">Sensibilité indicative</div><div class="diag-value">22 mV/°</div><div class="diag-sub">À confirmer et calibrer canal par canal</div></div></div></div>
+        <div class="panel"><div class="panel-heading"><div><h2>Validation capteur</h2><p>Seuils affichés selon le cadrage.</p></div></div><div class="pair-state"><div><div class="pair-name">Tension acceptable</div><div class="pair-meta">0,3 à 4,7 V</div></div><span class="state-pill"><i class="dot"></i>SIMULÉ</span></div><p class="form-note">Le PLC n’est pas connecté. Les diagnostics de câble coupé, court-circuit ou plage ADC seront disponibles après intégration du matériel.</p></div>
+      </div>
+    </section>
+
+    <section class="view" id="view-settings" role="tabpanel" hidden>
+      <div class="view-head"><div><p class="eyebrow">Configuration locale</p><h1>Paramètres</h1><p class="view-desc">Les modifications sont conservées dans ce navigateur uniquement.</p></div><span class="chip warn">Pas de PLC connecté</span></div>
+      <div class="split-layout">
+        <div class="panel">
+          <div class="panel-heading"><div><h2>Géométrie et acquisition</h2><p>Valeurs de départ du POC · paire avant seulement.</p></div></div>
+          <form id="settingsForm">
+            <div class="form-grid">
+              <div class="form-section-title">Montage</div>
+              <div class="field"><label for="pivotSpacing">Entraxe des pivots (m)</label><input id="pivotSpacing" name="pivotSpacing" type="number" step="0.001" min="0.3" max="1.2" value="0.525"><small>Mesure entre pivots gauche et droit.</small></div>
+              <div class="field"><label for="armLength">Longueur des bras (m)</label><input id="armLength" name="armLength" type="number" step="0.01" min="0.1" max="1.2" value="0.35"></div>
+              <div class="field"><label for="contactLength">Longueur de contact effective (m)</label><input id="contactLength" name="contactLength" type="number" step="0.01" min="0.1" max="1.2" value="0.35"><small>Hypothèse initiale, à affiner au montage.</small></div>
+              <div class="field"><label for="armDirection">Orientation des bras</label><select id="armDirection" name="armDirection"><option value="forward" selected>Vers l’avant</option><option value="backward">Vers l’arrière</option></select></div>
+              <div class="field"><label for="frontOffset">Décalage pivot avant / essieu avant (m)</label><input id="frontOffset" name="frontOffset" type="number" step="0.01" min="-1.5" max="1.5" value="0.40"></div>
+              <div class="field"><label for="trackWidth">Voie machine (m)</label><input id="trackWidth" name="trackWidth" type="number" step="0.01" min="0.5" max="3" value="1.16"></div>
+              <div class="form-section-title">Estimateur et validité</div>
+              <div class="field"><label for="estimator">Estimateur de démonstration</label><select id="estimator" name="estimator"><option value="v1" selected>v1 · point de contact</option><option value="v2">v2 · bissectrice (à valider)</option></select><small>La sélection est enregistrée, mais aucun estimateur n’est exécuté par cette maquette.</small></div>
+              <div class="field"><label for="contactThreshold">Seuil de contact (°)</label><input id="contactThreshold" name="contactThreshold" type="number" step="0.5" min="1" max="30" value="3"></div>
+              <div class="field"><label for="hysteresis">Hystérésis (°)</label><input id="hysteresis" name="hysteresis" type="number" step="0.5" min="0" max="10" value="1"></div>
+              <div class="field"><label for="medianWindow">Fenêtre médiane</label><input id="medianWindow" name="medianWindow" type="number" step="2" min="3" max="21" value="5"></div>
+              <div class="field"><label for="publishRate">Fréquence publication (Hz)</label><input id="publishRate" name="publishRate" type="number" step="5" min="5" max="200" value="50"></div>
+              <div class="form-section-title">Périmètre du POC</div>
+              <label class="check-row"><input type="checkbox" checked disabled> Paire avant active (fixe pour ce POC)</label>
+              <label class="check-row"><input type="checkbox" disabled> Paire arrière (évolution ultérieure)</label>
+            </div>
+            <div class="form-actions"><button class="btn primary" type="submit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 4h12l3 3v13H4V4z"/><path d="M8 4v6h8V4M8 20v-6h8v6"/></svg>Enregistrer localement</button><button class="btn" type="button" id="resetSettings">Valeurs par défaut</button><button class="btn" type="button" id="exportConfig">Exporter JSON</button><label class="btn" for="importConfig">Importer JSON<input id="importConfig" type="file" accept="application/json,.json" hidden></label></div>
+          </form>
+          <p class="form-note">Aucun changement n’est transmis au PLC. Les boutons servent uniquement à essayer l’interface de configuration.</p>
+        </div>
+        <div class="panel">
+          <div class="panel-heading"><div><h2>Connexion matériel</h2><p>ESP32 PLC 19R envisagé · référence et variante analogique à confirmer.</p></div><span class="chip warn">Hors ligne</span></div>
+          <div class="field"><label for="wifiMode">Mode Wi-Fi</label><select id="wifiMode" disabled><option>Point d’accès du PLC (prévu)</option><option>Client / STA</option></select></div>
+          <div class="field" style="margin-top:12px"><label for="wifiName">Nom du réseau</label><input id="wifiName" value="PALPEUR-TRAXX" disabled></div>
+          <div class="field" style="margin-top:12px"><label for="sampleFrequency">Rafraîchissement IHM cible</label><input id="sampleFrequency" value="20 Hz" disabled></div>
+          <p class="footer-note">La future configuration matérielle devra être validée avant écriture en NVS.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="view" id="view-calibration" role="tabpanel" hidden>
+      <div class="view-head"><div><p class="eyebrow">Assistant · deux capteurs</p><h1>Calibration</h1><p class="view-desc">Parcours de démonstration. Aucune valeur n’est capturée depuis un capteur réel.</p></div><span class="chip warn" id="calibrationState">Non calibré</span></div>
+      <div class="split-layout">
+        <div class="panel">
+          <div class="panel-heading"><div><h2>Procédure</h2><p>À effectuer séparément pour chaque bras.</p></div></div>
+          <div class="cal-steps"><div class="cal-step"><strong>01 · Neutre</strong><span>Bras au repos, sans contact, lecture stable sur 2 s.</span></div><div class="cal-step"><strong>02 · Butées</strong><span>Balayer toute la course pendant 10 s après le démarrage.</span></div><div class="cal-step"><strong>03 · Centre</strong><span>Machine centrée dans un rang connu.</span></div></div>
+          <div class="cal-value"><div><strong>Neutre · gauche</strong><small id="neutralLeftStatus">À capturer · moyenne simulée sur 2 s</small></div><button class="btn" type="button" data-capture="neutralLeft">Capturer</button></div>
+          <div class="cal-value"><div><strong>Neutre · droite</strong><small id="neutralRightStatus">À capturer · moyenne simulée sur 2 s</small></div><button class="btn" type="button" data-capture="neutralRight">Capturer</button></div>
+          <div class="cal-value"><div><strong>Butées · gauche / droite</strong><small id="endpointsStatus">Min/max nominaux non capturés</small></div><button class="btn" type="button" data-capture="endpoints">Capturer min/max</button></div>
+          <div class="cal-value"><div><strong>Centre latéral</strong><small id="centerStatus">Biais de référence non défini</small></div><button class="btn" type="button" data-capture="center">Définir</button></div>
+          <div class="form-actions"><button class="btn danger" id="resetCalibration" type="button">Réinitialiser la calibration</button></div>
+        </div>
+        <div class="panel">
+          <div class="panel-heading"><div><h2>Valeurs live</h2><p>Simulation des deux voies analogiques.</p></div><span class="chip sim">Démo</span></div>
+          <div class="sensor-mini"><div class="sensor-cell"><div class="sensor-title">NEUTRE GAUCHE</div><div class="sensor-reading" id="calLeftVoltage">2.94 V</div><div class="sensor-detail">Lecture simulée</div></div><div class="sensor-cell"><div class="sensor-title">NEUTRE DROIT</div><div class="sensor-reading" id="calRightVoltage">2.06 V</div><div class="sensor-detail">Lecture simulée</div></div></div>
+          <p class="form-note">La calibration réelle devra contrôler la stabilité avant capture et vérifier que les butées observées sont cohérentes avec la plage attendue.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="view" id="view-diagnostics" role="tabpanel" hidden>
+      <div class="view-head"><div><p class="eyebrow">Système · état local</p><h1>Diagnostic</h1><p class="view-desc">Version, simulation, export navigateur et préparation OTA.</p></div><span class="chip sim">Mode démo</span></div>
+      <div class="diag-grid">
+        <div class="diag-item"><div class="diag-label">Firmware</div><div class="diag-value">Non chargé</div><div class="diag-sub">Maquette HTML locale</div></div>
+        <div class="diag-item"><div class="diag-label">Uptime démo</div><div class="diag-value" id="uptimeValue">00:00</div><div class="diag-sub">Depuis l’ouverture de la page</div></div>
+        <div class="diag-item"><div class="diag-label">Taux de données</div><div class="diag-value" id="rateValue">10 Hz</div><div class="diag-sub">Cadence du simulateur de page</div></div>
+        <div class="diag-item"><div class="diag-label">Wi-Fi / PLC</div><div class="diag-value">Non connecté</div><div class="diag-sub">Aucun endpoint API configuré</div></div>
+        <div class="diag-item"><div class="diag-label">CAN</div><div class="diag-value">Désactivé</div><div class="diag-sub">Non utilisé dans le POC UI</div></div>
+        <div class="diag-item"><div class="diag-label">Configuration</div><div class="diag-value" id="configState">Locale</div><div class="diag-sub">Stockage navigateur</div></div>
+      </div>
+      <div class="split-layout" style="margin-top:14px">
+        <div class="panel">
+          <div class="panel-heading"><div><h2>Export des mesures</h2><p>Enregistrement local dans le navigateur.</p></div><span class="chip" id="recordingState">Arrêté</span></div>
+          <p class="subtle-text">Les échantillons enregistrés sont simulés; le CSV ne doit pas être utilisé comme donnée de mesure.</p>
+          <div class="form-actions"><button class="btn primary" type="button" id="toggleRecording"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="7"/></svg>Démarrer l’enregistrement</button><button class="btn" type="button" id="downloadCsv" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 20h14"/></svg>Exporter CSV</button></div>
+        </div>
+        <div class="panel">
+          <div class="panel-heading"><div><h2>Mise à jour OTA</h2><p>Fonction disponible après intégration au firmware.</p></div><span class="chip warn">Non connecté</span></div>
+          <div class="field"><label for="firmwareFile">Fichier firmware `.bin`</label><input id="firmwareFile" type="file" accept=".bin,application/octet-stream"></div>
+          <div class="form-actions"><button class="btn" type="button" id="otaButton">Vérifier le fichier</button></div>
+          <p class="footer-note">Cette maquette ne transmet aucun fichier. L’OTA réelle sera servie par le PLC sur le Wi-Fi local.</p>
+        </div>
+      </div>
+      <div class="panel" style="margin-top:14px">
+        <div class="panel-heading"><div><h2>Journal</h2><p>Événements de la maquette.</p></div><button class="btn" type="button" id="clearLog">Effacer</button></div>
+        <div id="logList" class="mono" style="display:grid;gap:7px;font-size:11px;color:var(--ink-soft)"></div>
+      </div>
+    </section>
+    <p class="footer-note">Palpeur TRAXX · prototype d’interface · aucune donnée matérielle active en mode fichier.</p>
+  </main>
+  <div class="toast" id="toast" role="status" hidden></div>
+
+  <script>
+    (() => {
+      const defaults = {
+        pivotSpacing: 0.525, armLength: 0.35, contactLength: 0.35,
+        armDirection: "forward", frontOffset: 0.4, trackWidth: 1.16,
+        estimator: "v1", contactThreshold: 3, hysteresis: 1,
+        medianWindow: 5, publishRate: 50
+      };
+      const storageKey = "palpeur-traxx-poc-config-v1";
+      let config = loadConfig();
+      let running = true;
+      let recording = false;
+      let startedAt = Date.now();
+      let sampleCount = 0;
+      let captured = { neutralLeft: false, neutralRight: false, endpoints: false, center: false };
+      let hardwareCalibration = null;
+      let samples = [];
+      let logEntries = [];
+      let toastTimer;
+      let mockPollInFlight = false;
+      const httpApiAvailable = location.protocol === "http:";
+      let current = { offset: 2.8, leftAngle: 24, rightAngle: -23.5, leftV: 2.94, rightV: 2.06, leftContact: true, rightContact: true };
+
+      const $ = (id) => document.getElementById(id);
+      const tabs = [...document.querySelectorAll(".tab")];
+      const fields = ["pivotSpacing", "armLength", "contactLength", "armDirection", "frontOffset", "trackWidth", "estimator", "contactThreshold", "hysteresis", "medianWindow", "publishRate"];
+
+      function loadConfig() {
+        try { return { ...defaults, ...JSON.parse(localStorage.getItem(storageKey) || "{}") }; }
+        catch { return { ...defaults }; }
+      }
+
+      function toast(message) {
+        const node = $("toast");
+        node.textContent = message;
+        node.hidden = false;
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => { node.hidden = true; }, 2800);
+      }
+
+      function log(message) {
+        const now = new Date().toLocaleTimeString("fr-FR", { hour12: false });
+        logEntries.unshift(`${now}  ${message}`);
+        logEntries = logEntries.slice(0, 12);
+        $("logList").innerHTML = logEntries.map((entry) => `<div>${escapeHtml(entry)}</div>`).join("");
+      }
+
+      function escapeHtml(value) {
+        return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+      }
+
+      function switchView(name) {
+        tabs.forEach((tab) => tab.setAttribute("aria-selected", String(tab.dataset.view === name)));
+        document.querySelectorAll(".view").forEach((view) => { view.hidden = view.id !== `view-${name}`; });
+        if (name === "live") drawCanvases();
+        if (name === "calibration") refreshCalibrationState();
+      }
+
+      tabs.forEach((tab) => tab.addEventListener("click", () => switchView(tab.dataset.view)));
+
+      function fillForm() {
+        fields.forEach((name) => {
+          const input = document.querySelector(`[name="${name}"]`);
+          if (input && config[name] !== undefined) input.value = config[name];
+        });
+      }
+
+      function updateViews() {
+        const offsetText = `${current.offset >= 0 ? "+" : "−"}${Math.abs(current.offset).toFixed(1)}`;
+        $("offsetValue").innerHTML = `${offsetText}<small>cm</small>`;
+        $("leftAngle").textContent = `${current.leftAngle >= 0 ? "+" : "−"}${Math.abs(current.leftAngle).toFixed(1)}°`;
+        $("rightAngle").textContent = `${current.rightAngle >= 0 ? "+" : "−"}${Math.abs(current.rightAngle).toFixed(1)}°`;
+        $("leftVoltage").textContent = `${current.leftV.toFixed(2)} V`;
+        $("rightVoltage").textContent = `${current.rightV.toFixed(2)} V`;
+        $("tableLeftVoltage").textContent = `${current.leftV.toFixed(2)} V`;
+        $("tableRightVoltage").textContent = `${current.rightV.toFixed(2)} V`;
+        $("tableLeftRaw").textContent = `${current.leftAngle >= 0 ? "+" : "−"}${Math.abs(current.leftAngle).toFixed(1)}°`;
+        $("tableRightRaw").textContent = `${current.rightAngle >= 0 ? "+" : "−"}${Math.abs(current.rightAngle).toFixed(1)}°`;
+        $("tableLeftFiltered").textContent = `${(current.leftAngle - 0.2).toFixed(1)}°`;
+        $("tableRightFiltered").textContent = `${(current.rightAngle + 0.3).toFixed(1)}°`;
+        $("calLeftVoltage").textContent = `${current.leftV.toFixed(2)} V`;
+        $("calRightVoltage").textContent = `${current.rightV.toFixed(2)} V`;
+        $("sampleTime").textContent = `Mise à jour ${new Date().toLocaleTimeString("fr-FR", { hour12: false })}`;
+        $("leftContactMeta").textContent = current.leftContact ? "Contact détecté" : "Bras libre";
+        $("rightContactMeta").textContent = current.rightContact ? "Contact détecté" : "Bras libre";
+      }
+
+      function updateSimulation() {
+        const time = (Date.now() - startedAt) / 1000;
+        current.offset = 3.1 * Math.sin(time * 0.32) + 1.2 * Math.sin(time * 0.11);
+        current.leftAngle = 23.8 + 1.8 * Math.sin(time * 0.55) + 0.3 * Math.sin(time * 2.3);
+        current.rightAngle = -23.5 - 1.5 * Math.sin(time * 0.49) + 0.25 * Math.sin(time * 2.1);
+        current.leftV = 2.94 + 0.04 * Math.sin(time * 0.8);
+        current.rightV = 2.06 + 0.035 * Math.sin(time * 0.72);
+        current.leftContact = true;
+        current.rightContact = true;
+        sampleCount++;
+        const stamp = Date.now();
+        samples.push({ time: stamp, offset: current.offset, angle: current.leftAngle });
+        samples = samples.filter((sample) => stamp - sample.time <= 30000);
+        if (recording) logCsvSample(stamp);
+        updateViews();
+        drawCanvases();
+      }
+
+      async function pollMockState() {
+        if (mockPollInFlight) return;
+        mockPollInFlight = true;
+        try {
+          const response = await fetch("/api/state", { cache: "no-store" });
+          if (!response.ok) throw new Error("API indisponible");
+          const state = await response.json();
+          current.offset = Number(state.pose.lateral_offset_m) * 100;
+          current.leftAngle = Number(state.front_pair.left.angle_raw_deg);
+          current.rightAngle = Number(state.front_pair.right.angle_raw_deg);
+          current.leftV = Number(state.front_pair.left.voltage_v);
+          current.rightV = Number(state.front_pair.right.voltage_v);
+          current.leftContact = Boolean(state.front_pair.left.contact);
+          current.rightContact = Boolean(state.front_pair.right.contact);
+          $("connectionChip").innerHTML = `<i class="dot"></i>${state.simulation ? "Mock HTTP connecté" : "PLC connecté"}`;
+          $("connectionChip").className = "chip good";
+          sampleCount++;
+          const stamp = Date.now();
+          samples.push({ time: stamp, offset: current.offset, angle: current.leftAngle });
+          samples = samples.filter((sample) => stamp - sample.time <= 30000);
+          if (recording) logCsvSample(stamp);
+          updateViews();
+          drawCanvases();
+        } catch {
+          $("connectionChip").innerHTML = '<i class="dot"></i>Simulation locale';
+          $("connectionChip").className = "chip sim";
+          if (running) updateSimulation();
+        } finally {
+          mockPollInFlight = false;
+        }
+      }
+
+      function drawScene() {
+        const canvas = $("sceneCanvas");
+        if (!canvas || canvas.offsetParent === null) return;
+        const rect = canvas.getBoundingClientRect();
+        const ratio = window.devicePixelRatio || 1;
+        canvas.width = Math.max(1, Math.floor(rect.width * ratio));
+        canvas.height = Math.max(1, Math.floor(rect.height * ratio));
+        const ctx = canvas.getContext("2d");
+        ctx.scale(ratio, ratio);
+        const w = rect.width, h = rect.height, cx = w / 2, cy = h * 0.56;
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = "#f7f8f5";
+        ctx.fillRect(0, 0, w, h);
+        ctx.strokeStyle = "#e4e9e4";
+        ctx.lineWidth = 1;
+        for (let y = 18; y < h; y += 24) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+        const rowX = Math.max(28, Math.min(w - 28, cx - current.offset * 3.2));
+        ctx.strokeStyle = "#33815a";
+        ctx.lineWidth = 3;
+        ctx.setLineDash([9, 6]);
+        ctx.beginPath(); ctx.moveTo(rowX, 15); ctx.lineTo(rowX, h - 12); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = "#537f61";
+        for (let y = 33; y < h - 20; y += 44) {
+          ctx.beginPath(); ctx.arc(rowX, y, 4, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.arc(rowX + 7, y + 11, 3, 0, Math.PI * 2); ctx.fill();
+        }
+        const bodyW = Math.min(95, w * 0.22), bodyH = Math.min(150, h * 0.52);
+        ctx.fillStyle = "#33443b";
+        ctx.beginPath(); ctx.roundRect(cx - bodyW / 2, cy - bodyH / 2, bodyW, bodyH, 9); ctx.fill();
+        ctx.fillStyle = "#52645a";
+        ctx.fillRect(cx - bodyW / 2 + 9, cy - bodyH / 2 + 15, bodyW - 18, 19);
+        ctx.fillStyle = "#1c2822";
+        ctx.fillRect(cx - bodyW / 2 - 9, cy - bodyH / 2 + 21, 9, 31);
+        ctx.fillRect(cx + bodyW / 2, cy - bodyH / 2 + 21, 9, 31);
+        ctx.fillRect(cx - bodyW / 2 - 9, cy + bodyH / 2 - 52, 9, 31);
+        ctx.fillRect(cx + bodyW / 2, cy + bodyH / 2 - 52, 9, 31);
+        const pivotY = cy - bodyH * 0.23;
+        const pivotGap = Math.min(104, w * 0.3);
+        ctx.strokeStyle = "#c76b2c";
+        ctx.lineWidth = 4;
+        ctx.lineCap = "round";
+        ctx.beginPath(); ctx.moveTo(cx - pivotGap / 2, pivotY); ctx.lineTo(cx + 18, pivotY - 49); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(cx + pivotGap / 2, pivotY); ctx.lineTo(cx - 18, pivotY - 49); ctx.stroke();
+        ctx.fillStyle = "#c76b2c";
+        ctx.beginPath(); ctx.arc(cx - pivotGap / 2, pivotY, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(cx + pivotGap / 2, pivotY, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#35443b";
+        ctx.font = "600 10px Segoe UI, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("TRAXX", cx, cy + 5);
+        ctx.fillStyle = "#237b54";
+        ctx.fillText("axe du rang", Math.max(43, Math.min(w - 43, rowX)), 13);
+      }
+
+      function drawTrend() {
+        const canvas = $("trendCanvas");
+        if (!canvas || canvas.offsetParent === null) return;
+        const rect = canvas.getBoundingClientRect();
+        const ratio = window.devicePixelRatio || 1;
+        canvas.width = Math.max(1, Math.floor(rect.width * ratio));
+        canvas.height = Math.max(1, Math.floor(rect.height * ratio));
+        const ctx = canvas.getContext("2d");
+        ctx.scale(ratio, ratio);
+        const w = rect.width, h = rect.height, left = 38, right = 10, top = 7, bottom = 22;
+        ctx.clearRect(0, 0, w, h);
+        ctx.font = "10px Segoe UI, sans-serif";
+        ctx.fillStyle = "#78827b";
+        ctx.strokeStyle = "#e2e7e2";
+        ctx.lineWidth = 1;
+        for (let i = 0; i <= 4; i++) {
+          const y = top + (h - top - bottom) * i / 4;
+          ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(w - right, y); ctx.stroke();
+          ctx.textAlign = "right";
+          ctx.fillText(`${(4 - i) * 2 - 4}`, left - 7, y + 3);
+        }
+        if (samples.length < 2) return;
+        const first = samples[0].time, last = samples[samples.length - 1].time;
+        const plotW = w - left - right, plotH = h - top - bottom;
+        const xAt = (time) => left + (time - first) / Math.max(1, last - first) * plotW;
+        const plot = (key, min, max, color) => {
+          ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.beginPath();
+          samples.forEach((sample, index) => {
+            const value = Math.max(min, Math.min(max, sample[key]));
+            const x = xAt(sample.time), y = top + (max - value) / (max - min) * plotH;
+            if (index === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+          });
+          ctx.stroke();
+        };
+        plot("offset", -4, 4, "#237b54");
+        plot("angle", 18, 30, "#c76b2c");
+      }
+
+      function drawCanvases() { drawScene(); drawTrend(); }
+
+      function renderCalibration() {
+        const neutralLeft = hardwareCalibration ? hardwareCalibration.neutral_left : captured.neutralLeft;
+        const neutralRight = hardwareCalibration ? hardwareCalibration.neutral_right : captured.neutralRight;
+        const endpoints = hardwareCalibration ? hardwareCalibration.endpoints : captured.endpoints;
+        const center = hardwareCalibration ? hardwareCalibration.center : captured.center;
+        $("neutralLeftStatus").textContent = neutralLeft
+          ? `Capturé · ${hardwareCalibration?.left_neutral_v?.toFixed(2) ?? current.leftV.toFixed(2)} V${hardwareCalibration ? "" : " (démo)"}`
+          : "À capturer · moyenne stable sur 2 s";
+        $("neutralRightStatus").textContent = neutralRight
+          ? `Capturé · ${hardwareCalibration?.right_neutral_v?.toFixed(2) ?? current.rightV.toFixed(2)} V${hardwareCalibration ? "" : " (démo)"}`
+          : "À capturer · moyenne stable sur 2 s";
+        $("endpointsStatus").textContent = hardwareCalibration?.capturing_endpoints
+          ? `Balayage en cours · ${Math.ceil(hardwareCalibration.capture_remaining_ms / 1000)} s restantes`
+          : endpoints ? `Min/max capturés${hardwareCalibration ? "" : " (démo)"}` : "Min/max non capturés";
+        $("centerStatus").textContent = center ? `Biais de référence défini${hardwareCalibration ? "" : " (démo)"}` : "Biais de référence non défini";
+        const complete = hardwareCalibration ? hardwareCalibration.calibrated : Object.values(captured).every(Boolean);
+        $("calibrationBadge").textContent = complete ? (hardwareCalibration ? "Calibré" : "Démo calibrée") : "À effectuer";
+        $("calibrationState").textContent = complete ? (hardwareCalibration ? "Calibré" : "Démo calibrée") : "Non calibré";
+        $("calibrationState").className = `chip ${complete ? "good" : "warn"}`;
+      }
+
+      async function refreshCalibrationState() {
+        if (!httpApiAvailable) return;
+        try {
+          const response = await fetch("/api/calibration", { cache: "no-store" });
+          if (!response.ok) return;
+          hardwareCalibration = await response.json();
+          renderCalibration();
+        } catch { }
+      }
+
+      document.querySelectorAll("[data-capture]").forEach((button) => button.addEventListener("click", async () => {
+        if (httpApiAvailable) {
+          const apiNames = { neutralLeft: "neutral_left", neutralRight: "neutral_right", endpoints: "endpoints", center: "center" };
+          const response = await fetch("/api/calibration/capture", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: apiNames[button.dataset.capture] }) }).catch(() => null);
+          const result = await response?.json().catch(() => ({}));
+          if (!response?.ok) {
+            toast(result?.error || "Capture calibration refusée.");
+            return;
+          }
+          await refreshCalibrationState();
+          toast(result?.capturing ? "Balayage démarré : déplacer les deux bras pendant 10 secondes." : "Capture calibration effectuée.");
+          return;
+        }
+        captured[button.dataset.capture] = true;
+        renderCalibration();
+        log(`Calibration simulée : ${button.textContent.toLowerCase()}`);
+        toast("Capture de démonstration uniquement; aucun capteur réel n’est lu.");
+      }));
+      $("resetCalibration").addEventListener("click", async () => {
+        if (httpApiAvailable) {
+          const response = await fetch("/api/calibration/reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => null);
+          if (!response?.ok) { toast("Réinitialisation de calibration refusée."); return; }
+          hardwareCalibration = await response.json().catch(() => null);
+          await refreshCalibrationState();
+          toast("Calibration réinitialisée dans le PLC.");
+          return;
+        }
+        captured = { neutralLeft: false, neutralRight: false, endpoints: false, center: false };
+        renderCalibration(); log("Calibration locale réinitialisée"); toast("Calibration de démonstration réinitialisée.");
+        if (httpApiAvailable) await fetch("/api/calibration/reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => {});
+      });
+
+      $("settingsForm").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const next = {};
+        fields.forEach((name) => {
+          const input = document.querySelector(`[name="${name}"]`);
+          next[name] = input.type === "number" ? Number(input.value) : input.value;
+        });
+        if (fields.some((name) => document.querySelector(`[name="${name}"]`).type === "number" && !Number.isFinite(next[name]))) {
+          toast("Vérifier les valeurs numériques."); return;
+        }
+        config = { ...defaults, ...next };
+        localStorage.setItem(storageKey, JSON.stringify(config));
+        if (httpApiAvailable) {
+          const response = await fetch("/api/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ config }) }).catch(() => null);
+          if (!response?.ok) toast("Configuration locale conservée; serveur mock injoignable.");
+        }
+        $("configState").textContent = "Enregistrée";
+        log("Paramètres enregistrés dans le navigateur");
+        toast("Paramètres enregistrés localement; rien n’a été transmis au PLC.");
+      });
+
+      $("resetSettings").addEventListener("click", () => {
+        config = { ...defaults }; fillForm(); localStorage.removeItem(storageKey);
+        $("configState").textContent = "Valeurs défaut";
+        log("Paramètres locaux remis aux valeurs par défaut"); toast("Valeurs par défaut restaurées.");
+      });
+
+      $("exportConfig").addEventListener("click", () => {
+        const blob = new Blob([JSON.stringify({ version: 1, scope: "POC paire avant", config }, null, 2)], { type: "application/json" });
+        downloadBlob(blob, "palpeur-traxx-config.json");
+        log("Configuration locale exportée en JSON");
+      });
+
+      $("importConfig").addEventListener("change", async (event) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        try {
+          const parsed = JSON.parse(await file.text());
+          const next = parsed.config || parsed;
+          config = { ...defaults, ...Object.fromEntries(fields.filter((name) => next[name] !== undefined).map((name) => [name, next[name]])) };
+          fillForm();
+          toast("Configuration chargée dans le formulaire. Cliquez sur Enregistrer pour la conserver.");
+          log("Fichier de configuration importé");
+        } catch { toast("Fichier JSON invalide."); }
+        event.target.value = "";
+      });
+
+      function downloadBlob(blob, filename) {
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = filename;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+      }
+
+      $("toggleSimulation").addEventListener("click", (event) => {
+        running = !running;
+        event.currentTarget.innerHTML = running
+          ? '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 5h4v14H7zM14 5h4v14h-4z"/></svg>Mettre en pause'
+          : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 5v14l11-7z"/></svg>Reprendre la simulation';
+        log(running ? "Simulation reprise" : "Simulation mise en pause");
+      });
+
+      $("toggleRecording").addEventListener("click", () => {
+        recording = !recording;
+        $("toggleRecording").innerHTML = recording
+          ? '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Arrêter l’enregistrement'
+          : '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="7"/></svg>Démarrer l’enregistrement';
+        $("recordingState").textContent = recording ? "En cours" : "Arrêté";
+        $("downloadCsv").disabled = samples.length === 0;
+        log(recording ? "Enregistrement CSV de démonstration démarré" : "Enregistrement arrêté");
+      });
+
+      function logCsvSample(stamp) {
+        const entry = { time: new Date(stamp).toISOString(), offset: current.offset, leftAngle: current.leftAngle, rightAngle: current.rightAngle, leftVoltage: current.leftV, rightVoltage: current.rightV };
+        const csvSamples = JSON.parse(sessionStorage.getItem("palpeur-traxx-csv") || "[]");
+        csvSamples.push(entry);
+        sessionStorage.setItem("palpeur-traxx-csv", JSON.stringify(csvSamples.slice(-3000)));
+        $("downloadCsv").disabled = false;
+      }
+
+      $("downloadCsv").addEventListener("click", () => {
+        const entries = JSON.parse(sessionStorage.getItem("palpeur-traxx-csv") || "[]");
+        if (!entries.length) { toast("Aucun échantillon enregistré."); return; }
+        const rows = ["horodatage;decalage_demo_cm;angle_gauche_demo_deg;angle_droit_demo_deg;tension_gauche_demo_v;tension_droite_demo_v", ...entries.map((item) => [item.time, item.offset.toFixed(2), item.leftAngle.toFixed(2), item.rightAngle.toFixed(2), item.leftVoltage.toFixed(3), item.rightVoltage.toFixed(3)].join(";"))];
+        downloadBlob(new Blob(["\ufeff" + rows.join("\r\n")], { type: "text/csv;charset=utf-8" }), "palpeur-traxx-demo.csv");
+        log("CSV de démonstration exporté");
+      });
+
+      $("otaButton").addEventListener("click", async () => {
+        const file = $("firmwareFile").files?.[0];
+        if (!file) { toast("Sélectionnez un fichier .bin pour tester le contrôle visuel."); return; }
+        if (!file.name.toLowerCase().endsWith(".bin")) { toast("Le fichier sélectionné n’a pas l’extension .bin."); return; }
+        if (!httpApiAvailable) {
+          toast(`${file.name} sélectionné (${(file.size / 1024).toFixed(0)} Ko). Aucun envoi en mode maquette.`);
+          log(`Fichier OTA sélectionné en démo : ${file.name}`);
+          return;
+        }
+        if (!confirm(`Envoyer ${file.name} au PLC et redémarrer le firmware ?`)) return;
+        const formData = new FormData();
+        formData.append("firmware", file, file.name);
+        try {
+          const response = await fetch("/api/ota", { method: "POST", body: formData });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(result.error || "Échec OTA");
+          toast("Firmware reçu. Le PLC redémarre.");
+          log(`Firmware envoyé : ${file.name}`);
+        } catch (error) {
+          toast(error.message || "Échec de l’envoi OTA.");
+        }
+      });
+      $("clearLog").addEventListener("click", () => { logEntries = []; $("logList").innerHTML = "<div>Aucun événement.</div>"; });
+
+      function updateUptime() {
+        const seconds = Math.floor((Date.now() - startedAt) / 1000);
+        const hours = Math.floor(seconds / 3600), minutes = Math.floor((seconds % 3600) / 60), remainder = seconds % 60;
+        $("uptimeValue").textContent = hours ? `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}` : `${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`;
+      }
+
+      fillForm();
+      renderCalibration();
+      logEntries = ["Maquette locale démarrée · aucun PLC connecté"];
+      $("logList").innerHTML = logEntries.map(escapeHtml).map((entry) => `<div>${entry}</div>`).join("");
+      updateViews();
+      updateSimulation();
+      setInterval(() => {
+        if (httpApiAvailable) pollMockState();
+        else if (running) updateSimulation();
+        updateUptime();
+      }, 50);
+      setInterval(() => {
+        if (httpApiAvailable && !$("view-calibration").hidden) refreshCalibrationState();
+      }, 1000);
+      window.addEventListener("resize", drawCanvases);
+      document.addEventListener("visibilitychange", () => { if (!document.hidden) drawCanvases(); });
+    })();
+  </script>
+</body>
+</html>
