@@ -39,6 +39,7 @@ L'**ESP32 PLC 19R** est maintenant le candidat d'achat probable pour garder cett
 | Longueur des bras `L` | 0,395 m | Mesurée sur table le 2026-11-09 |
 | Croisement des bras au repos | 28,0 cm | Mesuré sur table; cohérent avec des bras perpendiculaires à la machine au repos (2L − b = 27,5 cm) |
 | Bras au repos | Perpendiculaires (θ0 = 90°), 2 ressorts de rappel | Repoussés vers l'arrière en marche avant, libres vers l'avant en marche arrière; anti-claquement logiciel |
+| Rang | Cep tous les 1 m (3–25 cm), piquet tous les 5–10 m | Vitesse jusqu'à 6 km/h : acquisition 250 Hz, une mesure par passage de cep |
 | PLC candidat | Industrial Shields ESP32 PLC 19R | Achat probable; référence et variante à confirmer |
 | Acquisition initiale | Deux capteurs pour une paire | Compatible avec les deux voies analogiques documentées pour le PLC du projet joystick |
 | Évolution éventuelle | Deuxième paire | À décider après essais; le 19R est le candidat, sous réserve de vérifier ses voies analogiques |

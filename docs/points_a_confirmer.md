@@ -19,7 +19,9 @@ Ce registre évite de transformer des hypothèses en caractéristiques matériel
 | Entraxe des pivots | 0,515 m mesuré sur table | Revérifier une fois monté sur le TRAXX. La voie de 1,16 m n'est pas l'entraxe des pivots. |
 | Longueur des bras | 0,395 m mesurée sur table | Dimension modifiable si l'étude montre un meilleur compromis. |
 | Croisement mécanique | 28,0 cm mesuré sur table | 2L − b = 27,5 cm : bras perpendiculaires à la machine au repos. Pris en compte : angle de repos θ0 = 90° et sens appris à la calibration. Vérifier que le neutre de chaque capteur laisse au moins 60° de course vers l'arrière (affiché à l'étape « Sens »). |
-| Claquement des ressorts | Anti-rebond logiciel : confirmation 40 ms, fenêtre 250 ms, contact lié au côté | Régler ces durées aux premiers essais (vitesse, raideur, espacement des ceps). Vérifier que les bras croisés ne se heurtent pas au retour; envisager un amortissement (butée caoutchouc). |
+| Claquement des ressorts | Anti-rebond logiciel : confirmation 30 ms, fenêtre 80 ms, contact lié au côté, acquisition 250 Hz | Régler ces durées aux premiers essais (vitesse, raideur, espacement des ceps). Vérifier que les bras croisés ne se heurtent pas au retour; envisager un amortissement (butée caoutchouc). |
+| Calage des capteurs | Ceps de 3 à 25 cm : jusqu'à ~90° de balayage vers l'arrière | Au montage, caler chaque capteur pour que le neutre soit entre 1,5 et 2,5 V (ou 2,5–3,5 V en miroir) : ≥ 90° vers l'arrière, ≥ 45° vers l'avant. Vérifié à l'étape de calibration « Sens ». |
+| Cep + piquet rapprochés | Piquet à 0,5 m d'un cep : passages fusionnés si le cep fait plus de ~15 cm | Sans effet sur le zéro G/D ; vérifier aux essais si la fusion gêne. Durée de tenue de la mesure : 5 s. |
 | Voie | 1,16 m communiquée | Confirmer les points de mesure si la valeur est utilisée dans l'affichage. |
 | Bus CAN TRAXX | IDs et bitrate inconnus | Obtenir la liste d'IDs occupés, le bitrate et l'accord du propriétaire du bus. CAN reste désactivé. |
 | Carte CAN sur le PLC | Inconnue | Confirmer matériel/transceiver avant de choisir une implémentation physique. |
@@ -36,6 +38,7 @@ Ce registre évite de transformer des hypothèses en caractéristiques matériel
 - Palpeurs mesurés sur table : b = 0,515 m, L = 0,395 m, croisement 28 cm au repos; bras perpendiculaires, 2 ressorts de rappel, repoussés vers l'arrière en marche avant, libres vers l'avant en marche arrière.
 - TRAXX vignes étroites (fiche constructeur) : empattement 2,14 m, voie 1,16 m, jambage intérieur 0,59 m, longueur 3,18 m.
 - Indicateur prioritaire : la comparaison G/D des deux bras d'une paire.
+- Rang : un cep tous les 1 m (3 à 25 cm de diamètre), un piquet tous les 5 à 10 m entre deux ceps ; TRAXX jusqu'à 6 km/h.
 - OTA par Wi-Fi, dans l'esprit du projet joystick.
 - Chaîne de build basée sur Arduino CLI et le paquet Industrial Shields du projet joystick.
 - Validité : paire exigeant deux contacts; cap indisponible dans le POC; toute estimation dégradée doit porter un indicateur explicite.

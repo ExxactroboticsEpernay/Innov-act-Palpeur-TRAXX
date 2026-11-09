@@ -292,7 +292,7 @@
             <div class="pair-state" id="pairBlock-rear"><div><div class="pair-name">Paire arrière</div><div class="pair-meta" id="pairMeta-rear">—</div></div><span class="state-pill off" id="pairPill-rear"><i class="dot"></i>—</span></div>
           </div>
           <div class="panel">
-            <div class="panel-heading"><div><h2>Mesures live</h2><p>Balayage filtré (0 = repos, + vers l’arrière) et tension</p></div><span class="section-label">50 Hz cible</span></div>
+            <div class="panel-heading"><div><h2>Mesures live</h2><p>Balayage filtré (0 = repos, + vers l’arrière) et tension</p></div><span class="section-label">Acquisition 250 Hz</span></div>
             <div class="sensor-mini">
               <div class="sensor-cell" id="liveCell-front_left"><div class="sensor-title">AV GAUCHE</div><div class="sensor-reading" id="liveAngle-front_left">—</div><div class="sensor-detail" id="liveDetail-front_left">—</div></div>
               <div class="sensor-cell" id="liveCell-front_right"><div class="sensor-title">AV DROIT</div><div class="sensor-reading" id="liveAngle-front_right">—</div><div class="sensor-detail" id="liveDetail-front_right">—</div></div>
@@ -558,7 +558,7 @@
         both_free: "Deux bras libres", left_sensor_fault: "Défaut capteur gauche",
         right_sensor_fault: "Défaut capteur droit", both_sensor_fault: "Défaut des deux capteurs",
         calibration_invalid: "Calibration invalide", geometry_invalid: "Géométrie invalide",
-        pair_disabled: "Désactivée"
+        pair_disabled: "Désactivée", no_recent_vine: "Aucun cep récent"
       };
       const REFERENCES = {
         wheelbase_center: "au centre d’empattement", front_pair: "à la paire avant", rear_pair: "à la paire arrière"
@@ -694,56 +694,116 @@
       });
 
       // ---------- Simulateur de page (même modèle que tools/mock_server.py) ----------
-      function simulatedPair(pair, rowY, t) {
-        const empty = { voltage_v: null, angle_raw_deg: null, angle_filtered_deg: null, arm_angle_deg: null, contact: false, fault: false, rebound: false };
-        if (!pairEnabled(pair)) {
-          return { enabled: false, valid: false, reason: "pair_disabled", x_m: pairX(pair), row_y_m: null, lr_diff_deg: null, apparent_width_m: null, left: { ...empty }, right: { ...empty } };
+      // Rang réel : un cep tous les 1 m, un piquet tous les 7 m entre deux ceps,
+      // TRAXX à 6 km/h. Chaque objet repousse les bras vers l'arrière pendant
+      // ~0,3 m de trajet, puis les libère (claquement amorti).
+      const SIM_SPEED_MPS = 6 / 3.6, VINE_SPACING_M = 1, STAKE_SPACING_M = 7, STAKE_OFFSET_M = 0.5, STAKE_DIAMETER_M = 0.06;
+      const VINE_HOLD_S = 5;
+      const simTrackers = { front: newVineTracker(), rear: newVineTracker() };
+      let lastSimT = null;
+
+      function newVineTracker() { return { inEvent: false, sumDiff: 0, sumY: 0, n: 0, duration: 0, last: null }; }
+      // Même logique que VineEventTracker (src/core/vine_events.h) : un passage = une mesure.
+      function updateVineTracker(tracker, valid, diff, rowY, dt) {
+        if (tracker.last) { tracker.last.age_s += dt; tracker.last.fresh = tracker.last.age_s <= VINE_HOLD_S; }
+        if (valid && isNum(diff) && isNum(rowY)) {
+          if (!tracker.inEvent) Object.assign(tracker, { inEvent: true, sumDiff: 0, sumY: 0, n: 0, duration: 0 });
+          tracker.sumDiff += diff; tracker.sumY += rowY; tracker.n += 1; tracker.duration += dt;
+          return;
         }
-        const half = config.pivotSpacing / 2, reach = config.contactLength;
-        const clamp = (v) => Math.max(-1, Math.min(1, v));
-        const jitter = 0.15 * Math.sin(t * 2.3 + (pair === "front" ? 0 : 1.7));
-        // Bras repoussés vers l'arrière : angle géométrique au-delà de 90°.
-        const armAngles = {
-          left: 180 - Math.asin(clamp((half - (rowY + OBJECT_RADIUS_M)) / reach)) * 180 / Math.PI + jitter,
-          right: 180 - Math.asin(clamp((half + (rowY - OBJECT_RADIUS_M)) / reach)) * 180 / Math.PI - jitter
-        };
-        const restValue = Number(config[`${pair}RestAngle`]);
-        const rest = Number.isFinite(restValue) ? restValue : 90;
-        // Capteurs montés en miroir : la tension monte à gauche, descend à droite.
-        const side = (armAngle, sign) => {
-          const sweep = armAngle - rest;
-          return { voltage_v: 2.5 + sign * sweep * 4 / 180, angle_raw_deg: sweep, angle_filtered_deg: sweep - jitter * 0.8, arm_angle_deg: armAngle - jitter * 0.8, contact: true, fault: false, rebound: false };
-        };
-        const left = side(armAngles.left, 1), right = side(armAngles.right, -1);
-        // Comparaison G/D (φG − φD) : > 0 = rang plus près du pivot gauche.
-        return { enabled: true, valid: true, reason: "none", x_m: pairX(pair), row_y_m: rowY, lr_diff_deg: left.angle_filtered_deg - right.angle_filtered_deg, apparent_width_m: 2 * OBJECT_RADIUS_M, left, right };
+        if (!tracker.inEvent) return;
+        tracker.inEvent = false;
+        if (tracker.n === 0 || tracker.duration < 0.03) return;
+        tracker.last = { lr_diff_deg: tracker.sumDiff / tracker.n, row_y_m: tracker.sumY / tracker.n, duration_s: tracker.duration, age_s: 0, count: (tracker.last?.count || 0) + 1, fresh: true };
       }
 
-      function computePose(front, rear) {
-        const pose = { lateral_valid: false, heading_valid: false, estimated: false, reason: "none", lateral_offset_m: null, lateral_reference: null, lateral_reference_x_m: null, heading_deg: null, offsets: null };
+      function simulatedPair(pair, rowY, t, travel, dt) {
+        const empty = { voltage_v: null, angle_raw_deg: null, angle_filtered_deg: null, arm_angle_deg: null, contact: false, fault: false, rebound: false };
+        if (!pairEnabled(pair)) {
+          simTrackers[pair] = newVineTracker();
+          return { enabled: false, valid: false, reason: "pair_disabled", x_m: pairX(pair), row_y_m: null, lr_diff_deg: null, apparent_width_m: null, last_vine: null, left: { ...empty }, right: { ...empty } };
+        }
+        // Dernier objet arrivé sur la ligne des bras au repos, q = trajet depuis le contact.
+        const s = travel + pairX(pair);
+        const qVine = s - VINE_SPACING_M * Math.floor(s / VINE_SPACING_M);
+        const stakeS = s - STAKE_OFFSET_M;
+        const qStake = stakeS - STAKE_SPACING_M * Math.floor(stakeS / STAKE_SPACING_M);
+        const stake = qStake < qVine;
+        const q = stake ? qStake : qVine;
+        const radius = stake ? STAKE_DIAMETER_M / 2 : OBJECT_RADIUS_M;
+
+        // Balayages atteints quand l'objet quitte le bout des bras (bras ⟂ au repos).
+        const half = config.pivotSpacing / 2, reach = config.contactLength;
+        const clamp = (v) => Math.max(-1, Math.min(1, v));
+        const releaseLeft = 90 - Math.asin(clamp((half - (rowY + radius)) / reach)) * 180 / Math.PI;
+        const releaseRight = 90 - Math.asin(clamp((half + (rowY - radius)) / reach)) * 180 / Math.PI;
+        const contactTravel = config.armLength * Math.sin((releaseLeft + releaseRight) / 2 * Math.PI / 180) + radius;
+        let sweepLeft = 0, sweepRight = 0, rebound = false;
+        if (q <= contactTravel) {
+          sweepLeft = releaseLeft * q / contactTravel;
+          sweepRight = releaseRight * q / contactTravel;
+        } else {
+          const tau = (q - contactTravel) / SIM_SPEED_MPS;
+          if (tau < 0.15) {
+            sweepLeft = sweepRight = -6 * Math.exp(-tau / 0.03) * Math.cos(2 * Math.PI * tau / 0.05);
+            rebound = tau < 0.08;
+          }
+        }
+        const restValue = Number(config[`${pair}RestAngle`]);
+        const rest = Number.isFinite(restValue) ? restValue : 90;
+        const threshold = Number(config.contactThreshold) || 3;
+        // Capteurs montés en miroir : la tension monte à gauche, descend à droite.
+        const side = (sweep, sign) => ({
+          voltage_v: 2.5 + sign * sweep * 4 / 180, angle_raw_deg: sweep, angle_filtered_deg: sweep, arm_angle_deg: rest + sweep,
+          contact: !rebound && sweep > threshold, fault: false, rebound
+        });
+        const left = side(sweepLeft, 1), right = side(sweepRight, -1);
+        const valid = left.contact && right.contact;
+        // Comparaison G/D (φG − φD) : > 0 = rang plus près du pivot gauche.
+        const diff = valid ? left.angle_filtered_deg - right.angle_filtered_deg : null;
+        updateVineTracker(simTrackers[pair], valid, diff, valid ? rowY : null, dt);
+        const reason = valid ? "none" : left.contact ? "right_free" : right.contact ? "left_free" : "both_free";
+        return {
+          enabled: true, valid, reason, x_m: pairX(pair), row_y_m: valid ? rowY : null, lr_diff_deg: diff,
+          apparent_width_m: valid ? 2 * radius : null, last_vine: simTrackers[pair].last ? { ...simTrackers[pair].last } : null, left, right
+        };
+      }
+
+      // Pose à partir du dernier cep récent de chaque paire (comme le firmware).
+      function heldPair(pair) {
+        const last = pair.last_vine;
+        return pair.enabled && last && last.fresh ? { valid: true, x_m: pair.x_m, row_y_m: last.row_y_m } : { valid: false, x_m: pair.x_m };
+      }
+
+      function computePose(frontPair, rearPair) {
+        const front = heldPair(frontPair), rear = heldPair(rearPair);
+        const pose = { lateral_valid: false, heading_valid: false, estimated: false, reason: "no_recent_vine", lateral_offset_m: null, lateral_reference: null, lateral_reference_x_m: null, heading_deg: null, offsets: null };
         if (front.valid && rear.valid) {
           const sep = front.x_m - rear.x_m;
           const offsetAt = (x) => -(rear.row_y_m + (front.row_y_m - rear.row_y_m) * (x - rear.x_m) / sep);
           Object.assign(pose, {
-            lateral_valid: true, heading_valid: true,
+            lateral_valid: true, heading_valid: true, reason: "none",
             lateral_offset_m: offsetAt(config.wheelbase / 2), lateral_reference: "wheelbase_center", lateral_reference_x_m: config.wheelbase / 2,
             heading_deg: -Math.atan2(front.row_y_m - rear.row_y_m, sep) * 180 / Math.PI,
             offsets: { rear_axle_m: offsetAt(0), wheelbase_center_m: offsetAt(config.wheelbase / 2), front_axle_m: offsetAt(config.wheelbase) }
           });
         } else if (front.valid || rear.valid) {
           const valid = front.valid ? front : rear;
-          Object.assign(pose, { lateral_valid: true, lateral_offset_m: -valid.row_y_m, lateral_reference: front.valid ? "front_pair" : "rear_pair", lateral_reference_x_m: valid.x_m });
+          Object.assign(pose, { lateral_valid: true, reason: "none", lateral_offset_m: -valid.row_y_m, lateral_reference: front.valid ? "front_pair" : "rear_pair", lateral_reference_x_m: valid.x_m });
         }
         return pose;
       }
 
       function localState() {
         const t = (Date.now() - startedAt) / 1000;
+        const dt = lastSimT === null ? 0.05 : Math.max(0, Math.min(0.5, t - lastSimT));
+        lastSimT = t;
+        const travel = SIM_SPEED_MPS * t;
         const fx = pairX("front"), rx = pairX("rear"), mx = (fx + rx) / 2;
         const rowYMiddle = 0.031 * Math.sin(t * 0.32) + 0.012 * Math.sin(t * 0.11);
         const slope = Math.tan(0.012 * Math.sin(t * 0.18));
-        const front = simulatedPair("front", rowYMiddle + slope * (fx - mx), t);
-        const rear = simulatedPair("rear", rowYMiddle + slope * (rx - mx), t);
+        const front = simulatedPair("front", rowYMiddle + slope * (fx - mx), t, travel, dt);
+        const rear = simulatedPair("rear", rowYMiddle + slope * (rx - mx), t, travel, dt);
         return { timestamp_ms: Date.now() - startedAt, simulation: true, active_pairs: config.activePairs, front_pair: front, rear_pair: rear, pose: computePose(front, rear), can: { enabled: false, state: "disabled" } };
       }
 
@@ -825,13 +885,14 @@
         } else {
           $("headingValue").textContent = "Indisponible";
           $("headingValue").className = "metric-value not-available";
-          $("headingNote").textContent = active === "both" ? "Il faut les deux paires valides" : "Une seule paire active";
+          $("headingNote").textContent = active === "both" ? "Il faut un cep récent sur chaque paire" : "Une seule paire active";
         }
         // Synthèse des paires
         const enabledPairs = PAIRS.filter((p) => s[`${p}_pair`]?.enabled);
-        const validCount = enabledPairs.filter((p) => s[`${p}_pair`].valid).length;
+        // Une paire est « à jour » si son dernier passage de cep est récent.
+        const validCount = enabledPairs.filter((p) => s[`${p}_pair`].last_vine?.fresh).length;
         const summary = $("pairsSummary");
-        summary.innerHTML = `<i class="dot"></i>${validCount}/${enabledPairs.length} valide${validCount > 1 ? "s" : ""}`;
+        summary.innerHTML = `<i class="dot"></i>${validCount}/${enabledPairs.length} à jour`;
         summary.style.color = validCount === enabledPairs.length ? "var(--green)" : validCount ? "#865017" : "var(--red)";
         $("sampleTime").textContent = `Mise à jour ${new Date().toLocaleTimeString("fr-FR", { hour12: false })}`;
 
@@ -842,16 +903,20 @@
             $(`pairMeta-${p}`).textContent = "Non utilisée dans la configuration";
             return;
           }
-          setPill($(`pairPill-${p}`), pair.valid ? "" : (pair.reason || "").includes("fault") ? "bad" : "warn", pair.valid ? "VALIDE" : "INVALIDE");
+          // La mesure exploitable est le dernier passage de cep ; l'état des bras
+          // (contact / libre / rebond) est l'état instantané.
+          const last = pair.last_vine;
+          const anyFault = (pair.reason || "").includes("fault");
+          const pillText = anyFault ? "DÉFAUT" : pair.valid ? "CONTACT" : last?.fresh ? "À JOUR" : "PAS DE CEP";
+          setPill($(`pairPill-${p}`), anyFault ? "bad" : last?.fresh ? "" : "warn", pillText);
           const arm = (side) => pair[side]?.fault ? "défaut" : pair[side]?.contact ? "contact" : pair[side]?.rebound ? "rebond" : "libre";
-          const width = isNum(pair.apparent_width_m) ? ` · largeur ${(pair.apparent_width_m * 100).toFixed(1)} cm` : "";
           // Comparaison G/D en tête : c'est l'indicateur le plus direct du centrage.
-          const diff = isNum(pair.lr_diff_deg)
-            ? `<strong>G−D ${signed(pair.lr_diff_deg, 1)}°</strong> (${pair.lr_diff_deg > 0.5 ? "rang à gauche" : pair.lr_diff_deg < -0.5 ? "rang à droite" : "centré"}) · `
-            : "";
-          $(`pairMeta-${p}`).innerHTML = pair.valid
-            ? `${diff}G : ${arm("left")} · D : ${arm("right")}${escapeHtml(width)}`
-            : escapeHtml(REASONS[pair.reason] || pair.reason);
+          const sideText = (diff) => diff > 0.5 ? "rang à gauche" : diff < -0.5 ? "rang à droite" : "centré";
+          const lastText = last
+            ? `<strong>G−D ${signed(last.lr_diff_deg, 1)}°</strong> (${sideText(last.lr_diff_deg)}) · cep n°${last.count}, il y a ${last.age_s.toFixed(1)} s`
+            : "Aucun cep mesuré";
+          const armsText = anyFault ? escapeHtml(REASONS[pair.reason] || pair.reason) : `bras G : ${arm("left")} · D : ${arm("right")}`;
+          $(`pairMeta-${p}`).innerHTML = `${lastText}<br>${armsText}`;
         });
 
         // Capteurs
@@ -920,7 +985,9 @@
 
         // Rang
         const front = state.front_pair || {}, rear = state.rear_pair || {};
-        const points = [front, rear].filter((p) => p.valid && isNum(p.row_y_m)).map((p) => ({ y: yOf(p.x_m ?? pairX(p === front ? "front" : "rear")), x: rowXOf(p.row_y_m) }));
+        // Contact en cours, sinon dernier cep récent de la paire.
+        const rowYOf = (p) => p.valid && isNum(p.row_y_m) ? p.row_y_m : p.last_vine?.fresh ? p.last_vine.row_y_m : null;
+        const points = [front, rear].filter((p) => p.enabled && isNum(rowYOf(p))).map((p) => ({ y: yOf(p.x_m ?? pairX(p === front ? "front" : "rear")), x: rowXOf(rowYOf(p)) }));
         ctx.lineWidth = 3;
         ctx.setLineDash([9, 6]);
         if (points.length) {
@@ -1046,7 +1113,7 @@
         const ranges = directionDone.map((id) => cal.sensors[id].backward_range_deg).filter(isNum);
         const minRange = ranges.length ? Math.min(...ranges) : null;
         $("directionStatus").textContent = directionDone.length
-          ? `${directionDone.length}/${enabledSensors.length} bras appris${isNum(minRange) ? ` · course arrière mini ${minRange.toFixed(0)}°${minRange < 60 ? " ⚠ recaler le capteur" : ""}` : ""}${demo}`
+          ? `${directionDone.length}/${enabledSensors.length} bras appris${isNum(minRange) ? ` · course arrière mini ${minRange.toFixed(0)}°${minRange < 90 ? " ⚠ < 90° : un cep de 25 cm peut repousser le bras jusqu’à ~90°, recaler le capteur" : ""}` : ""}${demo}`
           : "Sens non appris · capturer le neutre d’abord";
         const endpointsDone = enabledSensors.filter((id) => cal.sensors[id].endpoints).length;
         $("endpointsStatus").textContent = cal.capturing_endpoints
@@ -1214,7 +1281,7 @@
           time: new Date(stamp).toISOString(), simulation: state.simulation !== false, pairs: state.active_pairs || config.activePairs,
           offset: pose.lateral_valid ? pose.lateral_offset_m * 100 : null, reference: pose.lateral_reference || "",
           heading: pose.heading_valid ? pose.heading_deg : null,
-          lrFront: state.front_pair?.lr_diff_deg ?? null, lrRear: state.rear_pair?.lr_diff_deg ?? null
+          lrFront: state.front_pair?.last_vine?.lr_diff_deg ?? null, lrRear: state.rear_pair?.last_vine?.lr_diff_deg ?? null
         };
         SENSOR_IDS.forEach((id) => { const sensor = sensorOf(state, id) || {}; row[`${id}_deg`] = sensor.angle_filtered_deg ?? null; row[`${id}_v`] = sensor.voltage_v ?? null; });
         csvBuffer.push(row);

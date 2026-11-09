@@ -21,7 +21,7 @@ int main() {
   std::cout << "diameter_cm,offset_cm,yaw_deg,sweep_left_deg,sweep_right_deg,"
                "lr_diff_deg,v1_error_cm,v2_error_cm\n";
   std::cout << std::fixed << std::setprecision(3);
-  for (int diameter_cm = 1; diameter_cm <= 30; ++diameter_cm) {
+  for (int diameter_cm = 3; diameter_cm <= 25; ++diameter_cm) {  // ceps : 3 à 25 cm
     for (int offset_cm = -12; offset_cm <= 12; offset_cm += 3) {
       for (int yaw_deg = -5; yaw_deg <= 5; yaw_deg += 5) {
         palpeur::CircularObjectScenario scenario;

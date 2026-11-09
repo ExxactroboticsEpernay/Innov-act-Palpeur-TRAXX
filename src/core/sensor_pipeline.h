@@ -13,16 +13,18 @@ struct SensorChannelConfig {
   float contact_threshold_deg = 3.0f;
   float contact_hysteresis_deg = 1.0f;
   float smoothing_alpha = 0.25f;
-  // Un cep à ~1 m/s balaie le bras d'environ 50° en 0,3 s : la limite de pente
-  // doit rester au-dessus (~160°/s) pour ne pas retarder la mesure.
-  float maximum_slew_deg_per_second = 300.0f;
+  // À 6 km/h, le cep balaie le bras de ~50° en ~180 ms, jusqu'à ~370°/s à
+  // l'impact : la limite de pente ne sert plus qu'à écrêter les aberrations.
+  float maximum_slew_deg_per_second = 1000.0f;
   std::size_t median_window = 5;
   // Anti-claquement. Quand le cep libère le bras, les ressorts le ramènent
   // brutalement : dépassement du repos et rebonds de part et d'autre.
   // - un contact n'est retenu que s'il dure au moins contact_confirm_s ;
   // - après une libération, aucun nouveau contact pendant release_blanking_s.
-  float contact_confirm_s = 0.04f;
-  float release_blanking_s = 0.25f;
+  // Contrainte : un piquet à 0,5 m d'un cep fin laisse ~0,09 s de bras libre à
+  // 6 km/h. La fenêtre anti-rebond doit rester nettement plus courte.
+  float contact_confirm_s = 0.03f;
+  float release_blanking_s = 0.08f;
 };
 
 struct SensorChannelReading {

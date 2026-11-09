@@ -4,6 +4,7 @@
 #include "core/filters.h"
 #include "core/geometry.h"
 #include "core/sensor_pipeline.h"
+#include "core/vine_events.h"
 #include "sim/geometry_simulation.h"
 
 #include <cmath>
@@ -374,6 +375,49 @@ void testSpringSnap() {
   check(channel.update(volts(40.0f), dt).contact, "next vine is detected after blanking");
 }
 
+// Cas le plus serré du rang réel : à 6 km/h, un cep puis un piquet 0,5 m plus
+// loin. Chaque passage dure ~180 ms (bras 0 → 49°), suivi du claquement, puis
+// ~120 ms de bras libre seulement. Acquisition 250 Hz, réglages par défaut.
+// Les deux objets doivent être vus et résumés en deux mesures distinctes.
+void testVinePassesAtFullSpeed() {
+  palpeur::SensorChannelConfig config;  // valeurs par défaut du firmware
+  config.calibration.voltage_min_v = 0.5f;
+  config.calibration.voltage_neutral_v = 2.5f;
+  config.calibration.voltage_max_v = 4.5f;
+  config.calibration.calibrated = true;
+  palpeur::SensorChannel channel(config);
+  palpeur::VineEventTracker tracker;
+  const float dt = 0.004f;  // 250 Hz
+  auto volts = [](float sweep_deg) { return 2.5f + sweep_deg * palpeur::kNominalVoltsPerDegree; };
+
+  int contact_starts = 0;
+  bool previous = false;
+  auto feed = [&](float sweep_deg, float lr_diff_deg) {
+    const auto reading = channel.update(volts(sweep_deg), dt);
+    if (reading.contact && !previous) ++contact_starts;
+    previous = reading.contact;
+    tracker.update(reading.contact, lr_diff_deg, 0.0f, reading.filtered_angle_deg, dt);
+  };
+  auto pass = [&](float lr_diff_deg) {
+    for (int i = 0; i <= 45; ++i) feed(49.0f * i / 45.0f, lr_diff_deg);  // 180 ms
+    const float snap[] = {-6.0f, -4.0f, 1.0f, 3.0f, 2.0f, -1.0f, -1.5f, 0.5f, 0.8f, 0.0f};
+    for (float sweep : snap) feed(sweep, lr_diff_deg);                   // 40 ms
+  };
+
+  for (int i = 0; i < 25; ++i) feed(0.0f, 0.0f);
+  pass(2.0f);                                    // cep
+  for (int i = 0; i < 20; ++i) feed(0.0f, 0.0f); // reste ~80 ms de bras libre
+  pass(-1.0f);                                   // piquet
+  for (int i = 0; i < 50; ++i) feed(0.0f, 0.0f);
+
+  check(contact_starts == 2, "vine then stake 0.5 m apart are both detected at 6 km/h");
+  check(tracker.last().count == 2 && near(tracker.last().lr_diff_deg, -1.0f) &&
+            tracker.last().duration_s > 0.1f && tracker.last().duration_s < 0.2f,
+        "each pass is summarised as one per-vine measurement");
+  check(tracker.fresh(0.5f) && !tracker.fresh(0.1f),
+        "per-vine measurement ages until the next pass");
+}
+
 // Montage réel : bras perpendiculaires au repos (θ0 = 90°), repoussés vers
 // l'arrière par le cep. Le simulateur (bras vers l'arrière, s = -1) donne un
 // angle mesuré depuis -x ; dans la convention firmware (s = +1, θ depuis +x),
@@ -444,6 +488,7 @@ int main() {
   testGeometrySimulation();
   testTwoPairSimulation();
   testSpringSnap();
+  testVinePassesAtFullSpeed();
   testBackwardSweptPair();
   testDisabledPairReason();
   testDisabledCanBus();

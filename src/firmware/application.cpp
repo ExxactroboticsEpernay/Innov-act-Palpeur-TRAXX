@@ -4,6 +4,7 @@
 #include "../core/calibration.h"
 #include "../core/geometry.h"
 #include "../core/sensor_pipeline.h"
+#include "../core/vine_events.h"
 #include "../sim/geometry_simulation.h"
 
 #include <Arduino.h>
@@ -77,7 +78,14 @@ struct AppConfig {
   int estimator = 1;
 };
 
-constexpr std::size_t kCalibrationWindowSize = 100;
+// Acquisition : à 6 km/h un passage de cep dure ~180 ms ; 250 Hz donne ~45
+// échantillons par passage (50 Hz n'en donnait que 9, mangés par la médiane
+// et la confirmation). La publication (page, CAN) reste à sa propre cadence.
+constexpr std::uint32_t kSampleRateHz = 250;
+// Une mesure de cep reste utilisée pour la pose pendant ce temps : à 6 km/h
+// un cep passe toutes les 0,6 s, à 1 km/h toutes les 3,6 s.
+constexpr float kVineHoldS = 5.0f;
+constexpr std::size_t kCalibrationWindowSize = 2 * kSampleRateHz;  // 2 s
 
 struct SensorState {
   SensorCalibration calibration;
@@ -97,6 +105,10 @@ struct RuntimeState {
   // Comparaison G/D brute (φG − φD), valable seulement si les deux bras de la
   // paire touchent le même cep au même instant.
   float raw_lr_diff_deg[kPairCount] = {NAN, NAN};
+  // Mesure par cep et estimation « tenue » (dernier cep récent) utilisée pour
+  // la pose : les paires AV et AR touchent rarement un cep au même instant.
+  VineEventTracker vines[kPairCount];
+  PairEstimate held[kPairCount];
   RowPose pose;
   std::uint32_t sequence = 0;
   bool simulated = PALPEUR_SIMULATION != 0;
@@ -141,6 +153,7 @@ const char* reasonName(InvalidReason reason) {
     case InvalidReason::CalibrationInvalid: return "calibration_invalid";
     case InvalidReason::GeometryInvalid: return "geometry_invalid";
     case InvalidReason::PairDisabled: return "pair_disabled";
+    case InvalidReason::NoRecentVine: return "no_recent_vine";
   }
   return "unknown";
 }
@@ -351,7 +364,7 @@ float armAngleDeg(int pair, float sweep_deg) {
 void updateMeasurements() {
   const std::uint32_t now = millis();
   const float delta_seconds = last_sample_ms == 0
-      ? 0.02f
+      ? 1.0f / kSampleRateHz
       : static_cast<float>(now - last_sample_ms) / 1000.0f;
   last_sample_ms = now;
 
@@ -359,9 +372,17 @@ void updateMeasurements() {
   for (float& voltage : voltages) voltage = NAN;
 
 #if PALPEUR_SIMULATION
-  // Rang droit ; la machine serpente lentement : décalage ±3,5 cm et lacet
-  // ±0,7° autour du milieu des deux stations de paires.
+  // Rang réel : un cep tous les 1 m, un piquet tous les 7 m (entre deux
+  // ceps), TRAXX à 6 km/h. La machine serpente lentement : décalage ±3,5 cm,
+  // lacet ±0,7°. Chaque objet repousse les bras vers l'arrière puis les
+  // libère ; les ressorts les ramènent avec dépassement et rebonds.
+  constexpr float kSimSpeedMps = 6.0f / 3.6f;
+  constexpr float kVineSpacingM = 1.0f;
+  constexpr float kStakeSpacingM = 7.0f;
+  constexpr float kStakeOffsetM = 0.5f;
+  constexpr float kStakeDiameterM = 0.06f;
   simulation_phase += delta_seconds;
+  const float travel_m = kSimSpeedMps * simulation_phase;
   const float front_x = pairConfig(kFront).x_m;
   const float rear_x = pairConfig(kRear).x_m;
   const float middle_x = (front_x + rear_x) / 2.0f;
@@ -369,23 +390,53 @@ void updateMeasurements() {
   const float row_slope = std::tan(0.012f * std::sin(simulation_phase * 0.18f));
   for (int pair = 0; pair < kPairCount; ++pair) {
     if (!app_config.pair_enabled[pair]) continue;
-    // Machine en marche avant : le cep repousse les bras vers l'arrière.
+    const PairConfig config = pairConfig(pair);
+    // Dernier objet ayant atteint la ligne des bras au repos : q = distance
+    // parcourue depuis le premier contact avec cet objet.
+    const float s = travel_m + config.x_m;
+    const float q_vine = s - kVineSpacingM * std::floor(s / kVineSpacingM);
+    const float stake_s = s - kStakeOffsetM;
+    const float q_stake = stake_s - kStakeSpacingM * std::floor(stake_s / kStakeSpacingM);
+    const bool stake = q_stake < q_vine;
+    const float q = stake ? q_stake : q_vine;
+    const float diameter = stake ? kStakeDiameterM : app_config.object_diameter_m;
+
+    // Angles atteints au moment où l'objet quitte le bout des bras.
     // Le simulateur (s = -1) mesure depuis -x : angle géométrique = 180° - θ_sim.
     CircularObjectScenario scenario;
-    scenario.pair = pairConfig(pair);
+    scenario.pair = config;
     scenario.pair.arm_direction = -1;
-    scenario.diameter_m = app_config.object_diameter_m;
-    scenario.row_y_at_pair_m = row_y_at_middle_m +
-                               row_slope * (scenario.pair.x_m - middle_x);
+    scenario.diameter_m = diameter;
+    scenario.row_y_at_pair_m = row_y_at_middle_m + row_slope * (config.x_m - middle_x);
     scenario.row_slope = row_slope;
     const SimulatedContact simulated = simulateCircularObjectContact(scenario);
+    float sweep_left = 0.0f;
+    float sweep_right = 0.0f;
     if (simulated.valid) {
       const float rest = app_config.rest_angle_deg[pair];
-      voltages[sensorOf(pair, kLeft)] = simulatedVoltageFromSweep(
-          180.0f - simulated.input.left_angle_deg - rest);
-      voltages[sensorOf(pair, kRight)] = simulatedVoltageFromSweep(
-          180.0f - simulated.input.right_angle_deg - rest);
+      const float release_left = 180.0f - simulated.input.left_angle_deg - rest;
+      const float release_right = 180.0f - simulated.input.right_angle_deg - rest;
+      const float mean_release_rad = (release_left + release_right) * 0.5f * 3.14159265f / 180.0f;
+      // Trajet en contact ≈ projection du bras au relâchement + rayon de l'objet.
+      const float contact_travel_m =
+          app_config.arm_length_m * std::sin(mean_release_rad) + diameter / 2.0f;
+      if (q <= contact_travel_m) {
+        const float progress = q / contact_travel_m;
+        sweep_left = release_left * progress;
+        sweep_right = release_right * progress;
+      } else {
+        // Claquement : dépassement amorti autour du repos pendant ~150 ms.
+        const float tau = (q - contact_travel_m) / kSimSpeedMps;
+        if (tau < 0.15f) {
+          const float snap = -6.0f * std::exp(-tau / 0.03f) *
+                             std::cos(2.0f * 3.14159265f * tau / 0.05f);
+          sweep_left = snap;
+          sweep_right = snap;
+        }
+      }
     }
+    voltages[sensorOf(pair, kLeft)] = simulatedVoltageFromSweep(sweep_left);
+    voltages[sensorOf(pair, kRight)] = simulatedVoltageFromSweep(sweep_right);
   }
 #else
   for (int index = 0; index < kSensorChannelCount; ++index) {
@@ -413,6 +464,8 @@ void updateMeasurements() {
       estimate.x_m = config.x_m;
       estimate.reason = InvalidReason::PairDisabled;
       runtime_state.raw_lr_diff_deg[pair] = NAN;
+      runtime_state.vines[pair].reset();
+      runtime_state.held[pair] = estimate;
       continue;
     }
     const SensorState& left = sensors[sensorOf(pair, kLeft)];
@@ -436,11 +489,31 @@ void updateMeasurements() {
         ? left.reading.filtered_angle_deg - right.reading.filtered_angle_deg
         : NAN;
     if (estimate.valid) estimate.row_y_m -= app_config.center_bias_m[pair];
+
+    // Mesure par cep : un passage = un double contact, résumé à sa fin.
+    VineEventTracker& vine = runtime_state.vines[pair];
+    vine.update(estimate.valid,
+                runtime_state.raw_lr_diff_deg[pair] - app_config.center_lr_diff_deg[pair],
+                estimate.row_y_m,
+                (left.reading.filtered_angle_deg + right.reading.filtered_angle_deg) * 0.5f,
+                delta_seconds);
+    PairEstimate& held = runtime_state.held[pair];
+    held = PairEstimate{};
+    held.x_m = config.x_m;
+    if (vine.fresh(kVineHoldS)) {
+      held.valid = true;
+      held.row_y_m = vine.last().row_y_m;
+    } else {
+      held.reason = estimate.valid || estimate.reason == InvalidReason::BothFree
+          ? InvalidReason::NoRecentVine
+          : estimate.reason;
+    }
   }
 
+  // Pose à partir du dernier cep récent de chaque paire.
   runtime_state.pose = estimateRowPose(vehicleGeometry(),
-                                       runtime_state.pairs[kRear],
-                                       runtime_state.pairs[kFront]);
+                                       runtime_state.held[kRear],
+                                       runtime_state.held[kFront]);
   ++runtime_state.sequence;
 }
 
@@ -471,6 +544,20 @@ void fillPairJson(JsonObject object, int pair) {
             runtime_state.raw_lr_diff_deg[pair] - app_config.center_lr_diff_deg[pair]);
   setNumber(object, "apparent_width_m",
             estimate.valid ? estimate.apparent_width_m : NAN);
+  // Dernier passage de cep (ou piquet) : c'est la mesure à exploiter.
+  const VineMeasurement& vine = runtime_state.vines[pair].last();
+  if (vine.available) {
+    JsonObject last = object["last_vine"].to<JsonObject>();
+    last["lr_diff_deg"] = vine.lr_diff_deg;
+    last["row_y_m"] = vine.row_y_m;
+    last["peak_sweep_deg"] = vine.peak_sweep_deg;
+    last["duration_s"] = vine.duration_s;
+    last["age_s"] = vine.age_s;
+    last["count"] = vine.count;
+    last["fresh"] = vine.age_s <= kVineHoldS;
+  } else {
+    object["last_vine"] = nullptr;
+  }
   fillSensorJson(object["left"].to<JsonObject>(), sensors[sensorOf(pair, kLeft)], pair);
   fillSensorJson(object["right"].to<JsonObject>(), sensors[sensorOf(pair, kRight)], pair);
 }
@@ -502,7 +589,7 @@ void handleState() {
     offsets["wheelbase_center_m"] = pose.offset_wheelbase_center_m;
     offsets["front_axle_m"] = pose.offset_front_axle_m;
   } else if (pose.lateral_valid) {
-    const bool front_valid = runtime_state.pairs[kFront].valid;
+    const bool front_valid = runtime_state.held[kFront].valid;
     pose_json["lateral_offset_m"] = pose.offset_at_valid_pair_m;
     pose_json["lateral_reference"] = front_valid ? "front_pair" : "rear_pair";
     pose_json["lateral_reference_x_m"] = pose.valid_pair_x_m;
@@ -618,7 +705,7 @@ void handleCalibrationCapture() {
   } else if (std::strcmp(name, "direction") == 0) {
     // Tous les bras actifs sont tenus repoussés vers l'arrière : le signe de
     // l'écart au neutre donne le sens de chaque capteur (montage en miroir).
-    constexpr std::size_t kDirectionSamples = 10;
+    constexpr std::size_t kDirectionSamples = kSampleRateHz / 10;  // 100 ms
     constexpr float kMinimumDeflectionV = 0.25f;  // ≈ 11°
     if (voltage_history_count < kDirectionSamples) {
       sendError(409, "Attendre quelques mesures");
@@ -894,8 +981,7 @@ void setup() {
 
 void loop() {
   web_server.handleClient();
-  const std::uint32_t sample_period_ms =
-      std::max<std::uint32_t>(1, 1000 / app_config.publish_rate_hz);
+  constexpr std::uint32_t sample_period_ms = 1000 / kSampleRateHz;
   if (millis() - last_sample_ms >= sample_period_ms) updateMeasurements();
   if (ota_restart_at_ms != 0 && static_cast<std::int32_t>(millis() - ota_restart_at_ms) >= 0) {
     ESP.restart();

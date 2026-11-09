@@ -161,11 +161,34 @@ Quand le cep libère un bras, les deux ressorts le ramènent brutalement au repo
 
 - **Décision sur la médiane**, pas sur la valeur lissée : la libération coupe le contact tout de suite, sans traîner l'ancien angle. Lissage et limite de pente repartent de la valeur courante.
 - **Contact lié au côté** : un contact pris vers l'arrière tombe dès que le bras repasse de l'autre côté du repos. Le dépassement n'est jamais pris pour un contact en marche arrière.
-- **Confirmation** : un contact doit durer au moins 40 ms (2 échantillons à 50 Hz). Un choc isolé ou un pic est ignoré.
-- **Fenêtre anti-rebond** : pendant 250 ms après une libération, aucun nouveau contact. Le capteur publie `rebound = true`, affiché « rebond ».
-- **Limite de pente relevée à 300°/s** : un cep à environ 1 m/s balaie le bras d'environ 50° en 0,3 s, soit environ 160°/s. Une limite à 60°/s aurait retardé la mesure.
+- **Confirmation** : un contact doit durer au moins 30 ms (environ 8 échantillons à 250 Hz). Un choc isolé ou un pic est ignoré.
+- **Fenêtre anti-rebond** : pendant 80 ms après une libération, aucun nouveau contact. Le capteur publie `rebound = true`, affiché « rebond ». Cette durée est plafonnée par le cas cep + piquet (voir ci-dessous).
+- **Limite de pente à 1 000°/s** : à 6 km/h, le bras balaie jusqu'à environ 370°/s à l'impact. La limite ne sert plus qu'à écrêter les aberrations.
 
-Ces durées sont à régler sur les premiers essais : vitesse d'avance, raideur des ressorts, espacement des ceps. Côté mécanique, un amortissement (butée caoutchouc, frein visqueux) réduirait les chocs sur les capteurs et les bras.
+Ces durées sont à régler sur les premiers essais : vitesse d'avance, raideur des ressorts, espacement des ceps. Pour cela, enregistrer un passage à 250 Hz et mesurer la durée réelle du retour et des rebonds. Côté mécanique, un amortissement (butée caoutchouc, frein visqueux) réduirait les chocs sur les capteurs et les bras.
+
+## Rang réel : cadence et mesure par cep
+
+Données terrain : un cep tous les 1 m, de **3 à 25 cm** de diamètre ; un piquet tous les 5 à 10 m, entre deux ceps ; TRAXX jusqu'à **6 km/h** (1,67 m/s).
+
+| Cas (6 km/h, montage b = 0,515 m, L = 0,395 m) | Ordre de grandeur |
+|---|---|
+| Balayage au relâchement, cep fin centré | ~49° |
+| Balayage au relâchement, cep de 25 cm centré | ~70° |
+| Balayage maxi, cep de 25 cm décalé de 10 cm | ~85–90° (bras presque parallèle à la machine) |
+| Trajet en double contact | ~0,30 m (cep fin) à ~0,5 m (cep de 25 cm) |
+| Durée du double contact | ~180 ms (cep fin) à ~300 ms |
+| Bras libre entre deux ceps espacés de 1 m | ~0,4 s |
+| Bras libre entre un cep et un piquet espacés de 0,5 m | ~0,09 s pour un cep fin, ~0,05 s pour 10 cm, moins de 30 ms au-delà de ~15 cm (les passages peuvent se confondre). Si la fenêtre anti-rebond couvre ce trou, le piquet est vu un peu plus tard, pas perdu. |
+
+Conséquences dans le code :
+
+- **Acquisition à 250 Hz**, environ 45 échantillons par passage. La publication (page, futur CAN) garde sa propre cadence.
+- **Mesure par cep** (`VineEventTracker`) : chaque double contact est résumé à sa fin (moyennes de G−D et de `y_row`, durée, balayage maxi). La mesure est conservée jusqu'au passage suivant. L'API publie `last_vine` avec `age_s` et `count`.
+- **Pose à partir des derniers ceps** : le décalage, et le cap avec 2 paires, utilisent le dernier passage de chaque paire s'il date de moins de 5 s (marge pour rouler lentement). Les paires AV et AR touchent rarement un cep au même instant : sans cette tenue, le cap ne serait presque jamais disponible.
+- **Fusion cep + piquet** : si les deux passages se confondent, la mesure est une moyenne des deux objets. Le zéro G/D reste juste ; seule l'amplitude est mélangée.
+
+**Calage mécanique du capteur.** Avec des ceps jusqu'à 25 cm, un bras doit pouvoir être repoussé d'environ 90° vers l'arrière, et basculer d'environ 45° vers l'avant en marche arrière. Il faut donc caler chaque capteur pour que son neutre soit entre 1,5 et 2,5 V si la tension monte vers l'arrière, ou entre 2,5 et 3,5 V dans le montage miroir. L'étape de calibration « Sens » affiche la course disponible vers l'arrière et alerte en dessous de 90°.
 
 ## Détection et qualité
 

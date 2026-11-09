@@ -89,10 +89,67 @@ def pair_x(pair: str) -> float:
     return config["rearOffset"]
 
 
-def simulated_pair(pair: str, row_y_m: float, elapsed: float) -> dict:
-    """Bras repoussés vers l'arrière par un objet rond centré en row_y_m.
+# Rang réel : un cep tous les 1 m, un piquet tous les 7 m (entre deux ceps),
+# TRAXX à 6 km/h. Chaque objet repousse les bras vers l'arrière pendant ~0,3 m
+# de trajet, puis les libère (claquement amorti). Même modèle que la page.
+SIM_SPEED_MPS = 6.0 / 3.6
+VINE_SPACING_M = 1.0
+STAKE_SPACING_M = 7.0
+STAKE_OFFSET_M = 0.5
+STAKE_DIAMETER_M = 0.06
+VINE_HOLD_S = 5.0
+MIN_EVENT_S = 0.03
 
-    Contact supposé en bout de bras (modèle v1). Angles publiés :
+
+def new_tracker() -> dict:
+    return {"in_event": False, "sum_diff": 0.0, "sum_y": 0.0, "n": 0, "duration": 0.0, "last": None}
+
+
+TRACKERS = {pair: new_tracker() for pair in PAIRS}
+
+
+def update_tracker(tracker: dict, valid: bool, diff: float | None, row_y: float | None, dt: float) -> None:
+    """Même logique que VineEventTracker (src/core/vine_events.h)."""
+    last = tracker["last"]
+    if last:
+        last["age_s"] = round(last["age_s"] + dt, 3)
+        last["fresh"] = last["age_s"] <= VINE_HOLD_S
+    if valid and diff is not None and row_y is not None:
+        if not tracker["in_event"]:
+            tracker.update(in_event=True, sum_diff=0.0, sum_y=0.0, n=0, duration=0.0)
+        tracker["sum_diff"] += diff
+        tracker["sum_y"] += row_y
+        tracker["n"] += 1
+        tracker["duration"] += dt
+        return
+    if not tracker["in_event"]:
+        return
+    tracker["in_event"] = False
+    if tracker["n"] == 0 or tracker["duration"] < MIN_EVENT_S:
+        return
+    tracker["last"] = {
+        "lr_diff_deg": round(tracker["sum_diff"] / tracker["n"], 2),
+        "row_y_m": round(tracker["sum_y"] / tracker["n"], 5),
+        "duration_s": round(tracker["duration"], 3),
+        "age_s": 0.0,
+        "count": (last["count"] if last else 0) + 1,
+        "fresh": True,
+    }
+
+
+def release_sweeps(row_y_m: float, radius_m: float) -> tuple[float, float]:
+    """Balayages G/D (°, + vers l'arrière) quand l'objet quitte le bout des bras."""
+    config = STATE["config"]
+    half = config["pivotSpacing"] / 2.0
+    reach = config["contactLength"]
+    sin_left = max(-1.0, min(1.0, (half - (row_y_m + radius_m)) / reach))
+    sin_right = max(-1.0, min(1.0, (half + (row_y_m - radius_m)) / reach))
+    return 90.0 - math.degrees(math.asin(sin_left)), 90.0 - math.degrees(math.asin(sin_right))
+
+
+def simulated_pair(pair: str, row_y_m: float, travel_m: float, dt: float) -> dict:
+    """État instantané d'une paire et dernier passage de cep mesuré.
+
     angle_*_deg = balayage depuis le repos (+ vers l'arrière),
     arm_angle_deg = angle géométrique depuis l'axe x.
     """
@@ -102,107 +159,142 @@ def simulated_pair(pair: str, row_y_m: float, elapsed: float) -> dict:
         "arm_angle_deg": None, "contact": False, "fault": False, "rebound": False,
     }
     if not pair_enabled(pair):
+        TRACKERS[pair] = new_tracker()
         return {
             "enabled": False, "valid": False, "reason": "pair_disabled",
-            "x_m": round(pair_x(pair), 3), "row_y_m": None, "lr_diff_deg": None, "apparent_width_m": None,
+            "x_m": round(pair_x(pair), 3), "row_y_m": None, "lr_diff_deg": None,
+            "apparent_width_m": None, "last_vine": None,
             "left": dict(disabled_sensor), "right": dict(disabled_sensor),
         }
 
-    half = config["pivotSpacing"] / 2.0
-    reach = config["contactLength"]
-    # Contact gauche au-dessus de l'objet, contact droit en dessous.
-    sin_left = max(-1.0, min(1.0, (half - (row_y_m + OBJECT_RADIUS_M)) / reach))
-    sin_right = max(-1.0, min(1.0, (half + (row_y_m - OBJECT_RADIUS_M)) / reach))
-    jitter = 0.15 * math.sin(elapsed * 2.3 + (0.0 if pair == "front" else 1.7))
+    # Dernier objet arrivé sur la ligne des bras au repos ; q = trajet depuis le contact.
+    s = travel_m + pair_x(pair)
+    q_vine = s - VINE_SPACING_M * math.floor(s / VINE_SPACING_M)
+    stake_s = s - STAKE_OFFSET_M
+    q_stake = stake_s - STAKE_SPACING_M * math.floor(stake_s / STAKE_SPACING_M)
+    stake = q_stake < q_vine
+    q = q_stake if stake else q_vine
+    radius = STAKE_DIAMETER_M / 2.0 if stake else OBJECT_RADIUS_M
+
+    release_left, release_right = release_sweeps(row_y_m, radius)
+    mean_release = math.radians((release_left + release_right) / 2.0)
+    contact_travel = config["armLength"] * math.sin(mean_release) + radius
+    sweeps = {"left": 0.0, "right": 0.0}
+    rebound = False
+    if q <= contact_travel:
+        sweeps = {"left": release_left * q / contact_travel, "right": release_right * q / contact_travel}
+    else:
+        tau = (q - contact_travel) / SIM_SPEED_MPS
+        if tau < 0.15:
+            snap = -6.0 * math.exp(-tau / 0.03) * math.cos(2.0 * math.pi * tau / 0.05)
+            sweeps = {"left": snap, "right": snap}
+            rebound = tau < 0.08
+
     rest = config[f"{pair}RestAngle"]
-    # Bras balayé vers l'arrière : angle géométrique au-delà de 90°.
-    arm_angles = {
-        "left": 180.0 - math.degrees(math.asin(sin_left)) + jitter,
-        "right": 180.0 - math.degrees(math.asin(sin_right)) - jitter,
-    }
+    threshold = config["contactThreshold"]
     # Capteurs montés en miroir : la tension monte à gauche et descend à droite.
     voltage_sign = {"left": 1.0, "right": -1.0}
     sides = {}
-    for side, arm_angle in arm_angles.items():
-        sweep = arm_angle - rest
+    for side, sweep in sweeps.items():
         sides[side] = {
             "voltage_v": round(2.5 + voltage_sign[side] * sweep * VOLTS_PER_DEGREE, 3),
             "angle_raw_deg": round(sweep, 2),
-            "angle_filtered_deg": round(sweep - jitter * 0.8, 2),
-            "arm_angle_deg": round(arm_angle - jitter * 0.8, 2),
-            "contact": True,
+            "angle_filtered_deg": round(sweep, 2),
+            "arm_angle_deg": round(rest + sweep, 2),
+            "contact": (not rebound) and sweep > threshold,
             "fault": False,
-            "rebound": False,
+            "rebound": rebound,
         }
+    valid = sides["left"]["contact"] and sides["right"]["contact"]
+    # Comparaison G/D (φG − φD) : > 0 = rang plus près du pivot gauche.
+    diff = round(sweeps["left"] - sweeps["right"], 2) if valid else None
+    update_tracker(TRACKERS[pair], valid, diff, row_y_m if valid else None, dt)
+    if valid:
+        reason = "none"
+    elif sides["left"]["contact"]:
+        reason = "right_free"
+    elif sides["right"]["contact"]:
+        reason = "left_free"
+    else:
+        reason = "both_free"
+    last = TRACKERS[pair]["last"]
     return {
-        "enabled": True, "valid": True, "reason": "none",
-        "x_m": round(pair_x(pair), 3), "row_y_m": round(row_y_m, 5),
-        # Comparaison G/D (φG − φD) : > 0 = rang plus près du pivot gauche.
-        "lr_diff_deg": round(sides["left"]["angle_filtered_deg"] - sides["right"]["angle_filtered_deg"], 2),
-        "apparent_width_m": round(2 * OBJECT_RADIUS_M, 4),
+        "enabled": True, "valid": valid, "reason": reason,
+        "x_m": round(pair_x(pair), 3), "row_y_m": round(row_y_m, 5) if valid else None,
+        "lr_diff_deg": diff,
+        "apparent_width_m": round(2 * radius, 4) if valid else None,
+        "last_vine": dict(last) if last else None,
         "left": sides["left"], "right": sides["right"],
     }
 
 
-def simulated_state() -> dict:
+def simulated_state(now: float | None = None) -> dict:
+    """État simulé. `now` (s) permet aux tests d'imposer l'horloge."""
     config = STATE["config"]
-    elapsed = time.monotonic() - STATE["started_at"]
+    elapsed = (time.monotonic() if now is None else now) - STATE["started_at"]
+    previous = STATE.get("last_elapsed")
+    dt = 0.05 if previous is None else max(0.0, min(0.5, elapsed - previous))
+    STATE["last_elapsed"] = elapsed
     sequence = STATE["sequence"]
     STATE["sequence"] = (sequence + 1) & 0xFFFFFFFF
 
     # Rang droit, machine qui serpente : décalage ±4 cm, lacet ±0,7°.
+    travel = SIM_SPEED_MPS * elapsed
     front_x, rear_x = pair_x("front"), pair_x("rear")
     middle_x = (front_x + rear_x) / 2.0
     row_y_middle = 0.031 * math.sin(elapsed * 0.32) + 0.012 * math.sin(elapsed * 0.11)
     row_slope = math.tan(0.012 * math.sin(elapsed * 0.18))
     pairs = {
-        pair: simulated_pair(pair, row_y_middle + row_slope * (pair_x(pair) - middle_x), elapsed)
+        pair: simulated_pair(pair, row_y_middle + row_slope * (pair_x(pair) - middle_x), travel, dt)
         for pair in PAIRS
     }
 
+    # Pose à partir du dernier cep récent de chaque paire (comme le firmware).
+    def held(pair: str) -> float | None:
+        last = pairs[pair]["last_vine"]
+        return last["row_y_m"] if pairs[pair]["enabled"] and last and last["fresh"] else None
+
     pose = {
         "lateral_valid": False, "heading_valid": False, "estimated": False,
-        "reason": "none", "lateral_offset_m": None, "lateral_reference": None,
+        "reason": "no_recent_vine", "lateral_offset_m": None, "lateral_reference": None,
         "lateral_reference_x_m": None, "heading_deg": None, "offsets": None,
     }
-    front, rear = pairs["front"], pairs["rear"]
-    if front["valid"] and rear["valid"]:
+    front_y, rear_y = held("front"), held("rear")
+    if front_y is not None and rear_y is not None:
         separation = front_x - rear_x
 
         def offset_at(x_ref: float) -> float:
-            row_y = rear["row_y_m"] + (front["row_y_m"] - rear["row_y_m"]) * (x_ref - rear_x) / separation
-            return round(-row_y, 5)
+            return round(-(rear_y + (front_y - rear_y) * (x_ref - rear_x) / separation), 5)
 
         wheelbase = config["wheelbase"]
         pose.update({
-            "lateral_valid": True, "heading_valid": True,
+            "lateral_valid": True, "heading_valid": True, "reason": "none",
             "lateral_offset_m": offset_at(wheelbase / 2.0),
             "lateral_reference": "wheelbase_center",
             "lateral_reference_x_m": wheelbase / 2.0,
-            "heading_deg": round(-math.degrees(math.atan2(front["row_y_m"] - rear["row_y_m"], separation)), 3),
+            "heading_deg": round(-math.degrees(math.atan2(front_y - rear_y, separation)), 3),
             "offsets": {
                 "rear_axle_m": offset_at(0.0),
                 "wheelbase_center_m": offset_at(wheelbase / 2.0),
                 "front_axle_m": offset_at(wheelbase),
             },
         })
-    else:
-        valid_pair = "front" if front["valid"] else "rear" if rear["valid"] else None
-        if valid_pair:
-            pose.update({
-                "lateral_valid": True,
-                "lateral_offset_m": round(-pairs[valid_pair]["row_y_m"], 5),
-                "lateral_reference": f"{valid_pair}_pair",
-                "lateral_reference_x_m": pairs[valid_pair]["x_m"],
-            })
+    elif front_y is not None or rear_y is not None:
+        valid_pair = "front" if front_y is not None else "rear"
+        pose.update({
+            "lateral_valid": True, "reason": "none",
+            "lateral_offset_m": round(-(front_y if front_y is not None else rear_y), 5),
+            "lateral_reference": f"{valid_pair}_pair",
+            "lateral_reference_x_m": pairs[valid_pair]["x_m"],
+        })
 
     return {
         "timestamp_ms": int(elapsed * 1000),
         "sequence": sequence,
         "simulation": True,
         "active_pairs": config["activePairs"],
-        "front_pair": front,
-        "rear_pair": rear,
+        "front_pair": pairs["front"],
+        "rear_pair": pairs["rear"],
         "pose": pose,
         "can": {"enabled": False, "state": "disabled"},
     }

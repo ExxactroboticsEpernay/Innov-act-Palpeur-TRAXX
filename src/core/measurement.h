@@ -12,7 +12,8 @@ enum class InvalidReason {
   BothSensorFault,
   CalibrationInvalid,
   GeometryInvalid,
-  PairDisabled  // paire désactivée dans la configuration (pas une panne)
+  PairDisabled,  // paire désactivée dans la configuration (pas une panne)
+  NoRecentVine   // aucun passage de cep mesuré récemment (arrêt, trou dans le rang)
 };
 
 struct PairConfig {
