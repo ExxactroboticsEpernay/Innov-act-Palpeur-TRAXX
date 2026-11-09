@@ -210,7 +210,19 @@ RowPose estimateRowPose(const VehicleGeometry& geometry,
     return result;
   }
 
-  result.reason = rear.reason != InvalidReason::None ? rear.reason : front.reason;
+  // Une paire désactivée ne doit pas masquer la vraie raison de l'autre paire.
+  const bool rear_informative = rear.reason != InvalidReason::None &&
+                                rear.reason != InvalidReason::PairDisabled;
+  const bool front_informative = front.reason != InvalidReason::None &&
+                                 front.reason != InvalidReason::PairDisabled;
+  if (front_informative) {
+    result.reason = front.reason;
+  } else if (rear_informative) {
+    result.reason = rear.reason;
+  } else {
+    result.reason = front.reason != InvalidReason::None ? front.reason
+                                                        : rear.reason;
+  }
   return result;
 }
 

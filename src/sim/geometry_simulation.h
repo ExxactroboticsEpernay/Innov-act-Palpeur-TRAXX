@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/measurement.h"
+#include "../core/measurement.h"
 
 namespace palpeur {
 

@@ -284,6 +284,64 @@ void testGeometrySimulation() {
   }
 }
 
+// Bout en bout à deux paires : rang droit, machine décalée et en lacet connu.
+// Le simulateur génère les angles des 4 bras, l'estimateur v1 puis
+// estimateRowPose doivent retrouver le cap et le décalage.
+void testTwoPairSimulation() {
+  constexpr float kPi = 3.14159265358979323846f;
+  palpeur::VehicleGeometry geometry;
+  geometry.wheelbase_m = 3.85f;
+  geometry.rear_pair_offset_m = -0.40f;
+  geometry.front_pair_offset_m = 0.40f;
+
+  const float heading_deg = 1.5f;              // ψ, cap machine / rang
+  const float row_slope = std::tan(-heading_deg * kPi / 180.0f);  // α = -ψ
+  // Rang 5 cm à gauche de O : environ +6 cm à la paire AR, -6 cm à la paire AV.
+  const float row_y_at_rear_axle_m = 0.05f;
+
+  palpeur::PairEstimate estimates[2];
+  const float pair_x[2] = {geometry.rear_pair_offset_m,
+                           geometry.wheelbase_m + geometry.front_pair_offset_m};
+  palpeur::ContactPointEstimator estimator;
+  bool simulated_ok = true;
+  for (int index = 0; index < 2; ++index) {
+    palpeur::CircularObjectScenario scenario;
+    scenario.pair.x_m = pair_x[index];
+    scenario.diameter_m = 0.05f;
+    scenario.row_y_at_pair_m = row_y_at_rear_axle_m + row_slope * pair_x[index];
+    scenario.row_slope = row_slope;
+    const auto contact = palpeur::simulateCircularObjectContact(scenario);
+    simulated_ok = simulated_ok && contact.valid;
+    estimates[index] = estimator.estimate(scenario.pair, contact.input);
+  }
+  check(simulated_ok && estimates[0].valid && estimates[1].valid,
+        "two simulated pairs produce two valid estimates");
+
+  const auto pose = palpeur::estimateRowPose(geometry, estimates[0], estimates[1]);
+  check(pose.heading_valid && near(pose.heading_deg, heading_deg, 0.3f),
+        "two-pair simulation recovers heading within 0.3 deg");
+  check(pose.lateral_valid &&
+            near(pose.offset_rear_axle_m, -row_y_at_rear_axle_m, 0.02f),
+        "two-pair simulation recovers rear axle offset within 2 cm");
+}
+
+void testDisabledPairReason() {
+  palpeur::VehicleGeometry geometry;
+  palpeur::PairEstimate rear;
+  rear.reason = palpeur::InvalidReason::PairDisabled;
+  palpeur::PairEstimate front;
+  front.reason = palpeur::InvalidReason::LeftFree;
+  auto pose = palpeur::estimateRowPose(geometry, rear, front);
+  check(!pose.lateral_valid && pose.reason == palpeur::InvalidReason::LeftFree,
+        "disabled rear pair does not hide the front pair reason");
+
+  front.reason = palpeur::InvalidReason::PairDisabled;
+  rear.reason = palpeur::InvalidReason::RightFree;
+  pose = palpeur::estimateRowPose(geometry, rear, front);
+  check(!pose.lateral_valid && pose.reason == palpeur::InvalidReason::RightFree,
+        "disabled front pair does not hide the rear pair reason");
+}
+
 void testDisabledCanBus() {
   palpeur::DisabledCanBus bus;
   palpeur::CanFrame frame;
@@ -304,6 +362,8 @@ int main() {
   testPose();
   testCanProtocol();
   testGeometrySimulation();
+  testTwoPairSimulation();
+  testDisabledPairReason();
   testDisabledCanBus();
   if (failures != 0) {
     std::cerr << failures << " test(s) failed\n";

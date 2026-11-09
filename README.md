@@ -14,7 +14,12 @@ Projet de mesure en lecture seule du décalage latéral et du cap du TRAXX dans 
 
 Le PLC ne commande aucun actionneur. Ses sorties ne sont pas utilisées.
 
-Le POC utilise une seule paire avant (deux capteurs). Une deuxième paire pourra être étudiée si les essais montrent qu'une mesure de cap est nécessaire. Cette évolution pourra justifier le remplacement du PLC; elle n'est pas une exigence de la première version.
+Le POC démarre avec une seule paire avant (deux capteurs). Le logiciel gère **une ou deux paires**, au choix dans les paramètres (`activePairs` : `front`, `rear` ou `both`) :
+
+- **1 paire** : décalage latéral à la station de la paire; cap explicitement indisponible.
+- **2 paires** : cap machine/rang et décalages à l'essieu arrière, au centre d'empattement (valeur principale) et à l'essieu avant. Si une des deux paires devient invalide, le décalage retombe sur la paire valide et le cap redevient indisponible.
+
+La deuxième paire exige quatre entrées analogiques 0–10 V utilisables avec le Wi-Fi, ce qui pourra justifier le remplacement du PLC.
 
 L'**ESP32 PLC 19R** est maintenant le candidat d'achat probable pour garder cette évolution ouverte. La référence complète et la variante analogique restent à confirmer; le nom du modèle seul ne garantit pas quatre entrées 0–10 V utilisables avec le Wi-Fi.
 

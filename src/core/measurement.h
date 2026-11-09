@@ -11,7 +11,8 @@ enum class InvalidReason {
   RightSensorFault,
   BothSensorFault,
   CalibrationInvalid,
-  GeometryInvalid
+  GeometryInvalid,
+  PairDisabled  // paire désactivée dans la configuration (pas une panne)
 };
 
 struct PairConfig {

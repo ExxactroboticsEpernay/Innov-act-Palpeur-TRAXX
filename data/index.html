@@ -182,6 +182,11 @@
       .diag-grid { grid-template-columns: 1fr 1fr; }
       .chart-legend { gap: 8px; flex-wrap: wrap; }
     }
+    .state-pill.warn { color: #865017; background: #fbf1db; }
+    .state-pill.bad { color: var(--red); background: var(--red-soft); }
+    .state-pill.off { color: var(--muted); background: #edf0ec; }
+    .sensor-cell.off, tr.off td { opacity: .45; }
+    .metric-value.small-value { font-size: 20px; }
   </style>
 </head>
 <body>
@@ -192,13 +197,12 @@
       </div>
       <div>
         <p class="brand-title">Palpeur TRAXX</p>
-        <p class="brand-subtitle">POC · paire avant</p>
+        <p class="brand-subtitle" id="brandSubtitle">POC · paire avant</p>
       </div>
     </div>
     <div class="top-status">
       <span class="chip sim" id="connectionChip"><i class="dot"></i>Simulation locale</span>
-      <span class="chip warn optional"><i class="dot"></i>PLC non connecté</span>
-      <span class="chip optional">FW —</span>
+      <span class="chip optional" id="pairsChip">1 paire</span>
     </div>
   </header>
 
@@ -211,190 +215,243 @@
   </nav>
 
   <main>
-    <div class="demo-banner" role="status">
+    <div class="demo-banner" role="status" id="demoBanner">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
-      <div><strong>Maquette interactive — données simulées</strong><p>En ouverture directe, les valeurs sont générées par le simulateur de page. Le cœur C++ implémente les estimateurs, mais cette maquette locale ne reçoit pas de mesures matérielles.</p></div>
+      <div><strong>Données simulées</strong><p id="demoBannerText">En ouverture directe, les valeurs sont générées par le simulateur de la page. Aucune mesure matérielle n’est lue.</p></div>
     </div>
 
     <section class="view" id="view-live" role="tabpanel">
       <div class="view-head">
-        <div><p class="eyebrow">Vue principale · paire avant</p><h1>Position dans le rang</h1><p class="view-desc">Lecture locale simulée · station de mesure à l’avant du TRAXX</p></div>
-        <div class="head-actions"><button class="btn subtle" id="toggleSimulation" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 5v14l11-7z"/></svg>Mettre en pause</button></div>
+        <div><p class="eyebrow" id="liveEyebrow">Vue principale · paire avant</p><h1>Position dans le rang</h1><p class="view-desc">Décalage latéral et cap de la machine par rapport au rang</p></div>
+        <div class="head-actions"><button class="btn subtle" id="toggleSimulation" type="button"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 5h4v14H7zM14 5h4v14h-4z"/></svg>Mettre en pause</button></div>
       </div>
       <div class="metrics">
-        <div class="metric primary-metric"><div class="metric-name">Décalage latéral simulé</div><div class="metric-value number" id="offsetValue">+0.0<small>cm</small></div><div class="metric-note">positif = machine à gauche du rang · valeur de démonstration</div></div>
-        <div class="metric"><div class="metric-name">Cap machine / rang</div><div class="metric-value not-available">Indisponible</div><div class="metric-note">Une seule paire active</div></div>
-        <div class="metric"><div class="metric-name">État paire avant</div><div class="metric-value" style="font-size:20px"><span class="status-inline"><i class="dot"></i>Double contact</span></div><div class="metric-note" id="sampleTime">Mise à jour —</div></div>
+        <div class="metric primary-metric"><div class="metric-name">Décalage latéral</div><div class="metric-value number" id="offsetValue">—</div><div class="metric-note" id="offsetNote">positif = machine à gauche du rang</div></div>
+        <div class="metric"><div class="metric-name">Cap machine / rang</div><div class="metric-value not-available" id="headingValue">Indisponible</div><div class="metric-note" id="headingNote">Une seule paire active</div></div>
+        <div class="metric"><div class="metric-name">État des paires</div><div class="metric-value small-value"><span class="status-inline" id="pairsSummary"><i class="dot"></i>—</span></div><div class="metric-note" id="sampleTime">Mise à jour —</div></div>
       </div>
 
       <div class="live-grid">
         <div class="panel">
-          <div class="panel-heading"><div><h2>Vue de dessus</h2><p>Schéma indicatif, non à l’échelle</p></div><span class="chip sim">Rang simulé</span></div>
-          <div class="scene-wrap"><div class="scene-topline"><span>AVANT ↑</span><span>Machine · repère local</span></div><canvas id="sceneCanvas" aria-label="Schéma de la machine, des palpeurs et du rang simulé"></canvas><div class="scene-caption"><span class="legend"><i class="legend-mark"></i>Axe du rang</span><span class="legend"><i class="legend-mark arm"></i>Bras de palpage</span><span class="legend"><i class="legend-mark machine"></i>TRAXX</span></div></div>
+          <div class="panel-heading"><div><h2>Vue de dessus</h2><p>Schéma indicatif · écarts latéraux du rang exagérés</p></div><span class="chip sim" id="sceneChip">Rang simulé</span></div>
+          <div class="scene-wrap"><div class="scene-topline"><span>AVANT ↑</span><span>Machine · repère local</span></div><canvas id="sceneCanvas" style="height:340px" aria-label="Schéma de la machine, des palpeurs et du rang"></canvas><div class="scene-caption"><span class="legend"><i class="legend-mark"></i>Axe du rang</span><span class="legend"><i class="legend-mark arm"></i>Bras en contact</span><span class="legend"><i class="legend-mark machine"></i>TRAXX</span></div></div>
         </div>
         <div class="side-stack">
           <div class="panel">
-            <div class="panel-heading"><div><h2>État de la paire</h2><p>Deux capteurs · paire avant active</p></div><span class="state-pill"><i class="dot"></i>VALIDE</span></div>
-            <div class="pair-state"><div><div class="pair-name">Bras gauche</div><div class="pair-meta" id="leftContactMeta">Contact détecté</div></div><span class="state-pill"><i class="dot"></i>CONTACT</span></div>
-            <div class="pair-state"><div><div class="pair-name">Bras droit</div><div class="pair-meta" id="rightContactMeta">Contact détecté</div></div><span class="state-pill"><i class="dot"></i>CONTACT</span></div>
+            <div class="panel-heading"><div><h2>État des paires</h2><p id="pairsPanelNote">Validité = deux bras en contact</p></div></div>
+            <div class="pair-state" id="pairBlock-front"><div><div class="pair-name">Paire avant</div><div class="pair-meta" id="pairMeta-front">—</div></div><span class="state-pill" id="pairPill-front"><i class="dot"></i>—</span></div>
+            <div class="pair-state" id="pairBlock-rear"><div><div class="pair-name">Paire arrière</div><div class="pair-meta" id="pairMeta-rear">—</div></div><span class="state-pill off" id="pairPill-rear"><i class="dot"></i>—</span></div>
           </div>
           <div class="panel">
-            <div class="panel-heading"><div><h2>Mesures live</h2><p>Valeurs brutes simulées</p></div><span class="section-label">50 Hz cible</span></div>
+            <div class="panel-heading"><div><h2>Mesures live</h2><p>Angles filtrés et tensions</p></div><span class="section-label">50 Hz cible</span></div>
             <div class="sensor-mini">
-              <div class="sensor-cell"><div class="sensor-title">GAUCHE · ANGLE</div><div class="sensor-reading" id="leftAngle">+24.0°</div><div class="sensor-detail" id="leftVoltage">2.94 V</div></div>
-              <div class="sensor-cell"><div class="sensor-title">DROIT · ANGLE</div><div class="sensor-reading" id="rightAngle">−24.0°</div><div class="sensor-detail" id="rightVoltage">2.06 V</div></div>
+              <div class="sensor-cell" id="liveCell-front_left"><div class="sensor-title">AV GAUCHE</div><div class="sensor-reading" id="liveAngle-front_left">—</div><div class="sensor-detail" id="liveDetail-front_left">—</div></div>
+              <div class="sensor-cell" id="liveCell-front_right"><div class="sensor-title">AV DROIT</div><div class="sensor-reading" id="liveAngle-front_right">—</div><div class="sensor-detail" id="liveDetail-front_right">—</div></div>
+              <div class="sensor-cell" id="liveCell-rear_left"><div class="sensor-title">AR GAUCHE</div><div class="sensor-reading" id="liveAngle-rear_left">—</div><div class="sensor-detail" id="liveDetail-rear_left">—</div></div>
+              <div class="sensor-cell" id="liveCell-rear_right"><div class="sensor-title">AR DROIT</div><div class="sensor-reading" id="liveAngle-rear_right">—</div><div class="sensor-detail" id="liveDetail-rear_right">—</div></div>
             </div>
           </div>
           <div class="panel">
-            <div class="panel-heading"><div><h2>Qualité de mesure</h2><p>Indicateurs de démonstration</p></div></div>
-            <div class="pair-state"><div class="pair-name">Capteurs</div><span class="state-pill"><i class="dot"></i>OK</span></div>
+            <div class="panel-heading"><div><h2>Qualité de mesure</h2><p>Capteurs des paires actives</p></div></div>
+            <div class="pair-state"><div class="pair-name">Capteurs</div><span class="state-pill" id="sensorsPill"><i class="dot"></i>OK</span></div>
             <div class="pair-state"><div class="pair-name">Calibration</div><span class="chip warn" id="calibrationBadge">À effectuer</span></div>
           </div>
         </div>
       </div>
       <div class="panel chart-panel">
-        <div class="panel-heading"><div><h2>Tendance récente</h2><p>Historique de démonstration · 30 secondes</p></div><div class="chart-legend"><span class="line-key"><i></i>Décalage (cm)</span><span class="line-key angle"><i></i>Angle gauche (°)</span></div></div>
-        <canvas id="trendCanvas" aria-label="Courbe simulée du décalage et de l’angle"></canvas>
+        <div class="panel-heading"><div><h2>Tendance récente</h2><p>30 dernières secondes · axe gauche en cm, cap à l’échelle ±2°</p></div><div class="chart-legend"><span class="line-key"><i></i>Décalage (cm)</span><span class="line-key angle"><i></i>Cap (°)</span></div></div>
+        <canvas id="trendCanvas" aria-label="Courbe du décalage et du cap"></canvas>
       </div>
     </section>
 
     <section class="view" id="view-sensors" role="tabpanel" hidden>
-      <div class="view-head"><div><p class="eyebrow">Acquisition · deux voies</p><h1>Capteurs</h1><p class="view-desc">Données simulées pour le POC de la paire avant.</p></div><span class="chip sim">Simulation locale</span></div>
+      <div class="view-head"><div><p class="eyebrow">Acquisition · quatre voies</p><h1>Capteurs</h1><p class="view-desc">Les voies d’une paire désactivée ne sont pas lues.</p></div></div>
       <div class="panel">
-        <div class="panel-heading"><div><h2>État des voies analogiques</h2><p>Les tensions affichées ne proviennent pas du matériel.</p></div></div>
+        <div class="panel-heading"><div><h2>État des voies analogiques</h2><p id="sensorsSource">Tensions simulées.</p></div></div>
         <div class="table-scroll"><table><thead><tr><th>Capteur</th><th>Tension</th><th>Angle brut</th><th>Angle filtré</th><th>Contact</th><th>Défaut</th></tr></thead><tbody>
-          <tr><td><span class="sensor-name">Avant gauche</span><br><span class="subtle-text">Canal 1 · non raccordé</span></td><td class="number" id="tableLeftVoltage">2.94 V</td><td class="number" id="tableLeftRaw">+24.0°</td><td class="number" id="tableLeftFiltered">+23.8°</td><td><span class="state-pill"><i class="dot"></i>Contact</span></td><td><span class="subtle-text">Aucun</span></td></tr>
-          <tr><td><span class="sensor-name">Avant droit</span><br><span class="subtle-text">Canal 2 · non raccordé</span></td><td class="number" id="tableRightVoltage">2.06 V</td><td class="number" id="tableRightRaw">−24.0°</td><td class="number" id="tableRightFiltered">−23.7°</td><td><span class="state-pill"><i class="dot"></i>Contact</span></td><td><span class="subtle-text">Aucun</span></td></tr>
+          <tr id="row-front_left"><td><span class="sensor-name">Avant gauche</span><br><span class="subtle-text">Voie 0</span></td><td class="number" id="tv-front_left">—</td><td class="number" id="traw-front_left">—</td><td class="number" id="tfilt-front_left">—</td><td id="tcontact-front_left">—</td><td id="tfault-front_left">—</td></tr>
+          <tr id="row-front_right"><td><span class="sensor-name">Avant droit</span><br><span class="subtle-text">Voie 1</span></td><td class="number" id="tv-front_right">—</td><td class="number" id="traw-front_right">—</td><td class="number" id="tfilt-front_right">—</td><td id="tcontact-front_right">—</td><td id="tfault-front_right">—</td></tr>
+          <tr id="row-rear_left"><td><span class="sensor-name">Arrière gauche</span><br><span class="subtle-text">Voie 2</span></td><td class="number" id="tv-rear_left">—</td><td class="number" id="traw-rear_left">—</td><td class="number" id="tfilt-rear_left">—</td><td id="tcontact-rear_left">—</td><td id="tfault-rear_left">—</td></tr>
+          <tr id="row-rear_right"><td><span class="sensor-name">Arrière droit</span><br><span class="subtle-text">Voie 3</span></td><td class="number" id="tv-rear_right">—</td><td class="number" id="traw-rear_right">—</td><td class="number" id="tfilt-rear_right">—</td><td id="tcontact-rear_right">—</td><td id="tfault-rear_right">—</td></tr>
         </tbody></table></div>
       </div>
       <div class="split-layout" style="margin-top:14px">
         <div class="panel"><div class="panel-heading"><div><h2>Conversion nominale</h2><p>Repère indicatif du capteur RTY180HVNAA, avant calibration.</p></div></div><div class="form-grid"><div class="diag-item"><div class="diag-label">Plage nominale</div><div class="diag-value">0.5–4.5 V</div><div class="diag-sub">180° de course annoncés</div></div><div class="diag-item"><div class="diag-label">Sensibilité indicative</div><div class="diag-value">22 mV/°</div><div class="diag-sub">À confirmer et calibrer canal par canal</div></div></div></div>
-        <div class="panel"><div class="panel-heading"><div><h2>Validation capteur</h2><p>Seuils affichés selon le cadrage.</p></div></div><div class="pair-state"><div><div class="pair-name">Tension acceptable</div><div class="pair-meta">0,3 à 4,7 V</div></div><span class="state-pill"><i class="dot"></i>SIMULÉ</span></div><p class="form-note">Le PLC n’est pas connecté. Les diagnostics de câble coupé, court-circuit ou plage ADC seront disponibles après intégration du matériel.</p></div>
+        <div class="panel"><div class="panel-heading"><div><h2>Validation capteur</h2><p>Seuils affichés selon le cadrage.</p></div></div><div class="pair-state"><div><div class="pair-name">Tension acceptable</div><div class="pair-meta">0,3 à 4,7 V</div></div><span class="state-pill"><i class="dot"></i>0,3–4,7 V</span></div><p class="form-note">Hors de cette plage : défaut capteur (câble coupé, court-circuit), distinct d’une absence de contact. Quatre voies analogiques 0–10 V utilisables avec le Wi-Fi sont nécessaires pour deux paires : à vérifier sur le PLC retenu.</p></div>
       </div>
     </section>
 
     <section class="view" id="view-settings" role="tabpanel" hidden>
-      <div class="view-head"><div><p class="eyebrow">Configuration locale</p><h1>Paramètres</h1><p class="view-desc">Les modifications sont conservées dans ce navigateur uniquement.</p></div><span class="chip warn">Pas de PLC connecté</span></div>
+      <div class="view-head"><div><p class="eyebrow">Configuration</p><h1>Paramètres</h1><p class="view-desc" id="settingsDesc">Conservés dans ce navigateur et envoyés au PLC s’il est connecté.</p></div></div>
       <div class="split-layout">
         <div class="panel">
-          <div class="panel-heading"><div><h2>Géométrie et acquisition</h2><p>Valeurs de départ du POC · paire avant seulement.</p></div></div>
+          <div class="panel-heading"><div><h2>Géométrie et acquisition</h2><p>Repère : origine au centre de l’essieu arrière, x vers l’avant.</p></div></div>
           <form id="settingsForm">
             <div class="form-grid">
-              <div class="form-section-title">Montage</div>
-              <div class="field"><label for="pivotSpacing">Entraxe des pivots (m)</label><input id="pivotSpacing" name="pivotSpacing" type="number" step="0.001" min="0.3" max="1.2" value="0.525"><small>Mesure entre pivots gauche et droit.</small></div>
+              <div class="form-section-title">Paires de palpeurs</div>
+              <div class="field"><label for="activePairs">Paires actives</label><select id="activePairs" name="activePairs"><option value="front" selected>1 paire · avant</option><option value="rear">1 paire · arrière</option><option value="both">2 paires · avant + arrière</option></select><small>Avec 1 paire : décalage local, cap indisponible. Avec 2 paires : cap et décalages aux essieux.</small></div>
+              <div class="field"><label for="wheelbase">Empattement (m)</label><input id="wheelbase" name="wheelbase" type="number" step="0.01" min="2" max="6" value="3.85"><small>Provisoire, à mesurer sur le TRAXX.</small></div>
+              <div class="form-section-title">Paire avant</div>
+              <div class="field"><label for="frontOffset">Décalage pivot / essieu avant (m)</label><input id="frontOffset" name="frontOffset" type="number" step="0.01" min="-1.5" max="1.5" value="0.40"><small>Positif = devant l’essieu.</small></div>
+              <div class="field"><label for="frontArmDirection">Orientation des bras avant</label><select id="frontArmDirection" name="frontArmDirection"><option value="forward" selected>Vers l’avant</option><option value="backward">Vers l’arrière</option></select></div>
+              <div class="form-section-title">Paire arrière</div>
+              <div class="field"><label for="rearOffset">Décalage pivot / essieu arrière (m)</label><input id="rearOffset" name="rearOffset" type="number" step="0.01" min="-1.5" max="1.5" value="-0.40"><small>Négatif = derrière l’essieu.</small></div>
+              <div class="field"><label for="rearArmDirection">Orientation des bras arrière</label><select id="rearArmDirection" name="rearArmDirection"><option value="forward" selected>Vers l’avant</option><option value="backward">Vers l’arrière</option></select></div>
+              <div class="form-section-title">Montage commun aux deux paires</div>
+              <div class="field"><label for="pivotSpacing">Entraxe des pivots (m)</label><input id="pivotSpacing" name="pivotSpacing" type="number" step="0.001" min="0.3" max="1.2" value="0.525"><small>Entre pivots gauche et droit d’une paire.</small></div>
               <div class="field"><label for="armLength">Longueur des bras (m)</label><input id="armLength" name="armLength" type="number" step="0.01" min="0.1" max="1.2" value="0.35"></div>
               <div class="field"><label for="contactLength">Longueur de contact effective (m)</label><input id="contactLength" name="contactLength" type="number" step="0.01" min="0.1" max="1.2" value="0.35"><small>Hypothèse initiale, à affiner au montage.</small></div>
-              <div class="field"><label for="armDirection">Orientation des bras</label><select id="armDirection" name="armDirection"><option value="forward" selected>Vers l’avant</option><option value="backward">Vers l’arrière</option></select></div>
-              <div class="field"><label for="frontOffset">Décalage pivot avant / essieu avant (m)</label><input id="frontOffset" name="frontOffset" type="number" step="0.01" min="-1.5" max="1.5" value="0.40"></div>
-              <div class="field"><label for="trackWidth">Voie machine (m)</label><input id="trackWidth" name="trackWidth" type="number" step="0.01" min="0.5" max="3" value="1.16"></div>
+              <div class="field"><label for="trackWidth">Voie machine (m)</label><input id="trackWidth" name="trackWidth" type="number" step="0.01" min="0.5" max="3" value="1.16"><small>Affichage uniquement.</small></div>
               <div class="form-section-title">Estimateur et validité</div>
-              <div class="field"><label for="estimator">Estimateur de démonstration</label><select id="estimator" name="estimator"><option value="v1" selected>v1 · point de contact</option><option value="v2">v2 · bissectrice (à valider)</option></select><small>La sélection est enregistrée, mais aucun estimateur n’est exécuté par cette maquette.</small></div>
+              <div class="field"><label for="estimator">Estimateur</label><select id="estimator" name="estimator"><option value="v1" selected>v1 · point de contact</option><option value="v2">v2 · bissectrice (à valider)</option></select></div>
               <div class="field"><label for="contactThreshold">Seuil de contact (°)</label><input id="contactThreshold" name="contactThreshold" type="number" step="0.5" min="1" max="30" value="3"></div>
               <div class="field"><label for="hysteresis">Hystérésis (°)</label><input id="hysteresis" name="hysteresis" type="number" step="0.5" min="0" max="10" value="1"></div>
               <div class="field"><label for="medianWindow">Fenêtre médiane</label><input id="medianWindow" name="medianWindow" type="number" step="2" min="3" max="21" value="5"></div>
               <div class="field"><label for="publishRate">Fréquence publication (Hz)</label><input id="publishRate" name="publishRate" type="number" step="5" min="5" max="200" value="50"></div>
-              <div class="form-section-title">Périmètre du POC</div>
-              <label class="check-row"><input type="checkbox" checked disabled> Paire avant active (fixe pour ce POC)</label>
-              <label class="check-row"><input type="checkbox" disabled> Paire arrière (évolution ultérieure)</label>
             </div>
-            <div class="form-actions"><button class="btn primary" type="submit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 4h12l3 3v13H4V4z"/><path d="M8 4v6h8V4M8 20v-6h8v6"/></svg>Enregistrer localement</button><button class="btn" type="button" id="resetSettings">Valeurs par défaut</button><button class="btn" type="button" id="exportConfig">Exporter JSON</button><label class="btn" for="importConfig">Importer JSON<input id="importConfig" type="file" accept="application/json,.json" hidden></label></div>
+            <div class="form-actions"><button class="btn primary" type="submit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 4h12l3 3v13H4V4z"/><path d="M8 4v6h8V4M8 20v-6h8v6"/></svg>Enregistrer</button><button class="btn" type="button" id="resetSettings">Valeurs par défaut</button><button class="btn" type="button" id="exportConfig">Exporter JSON</button><label class="btn" for="importConfig">Importer JSON<input id="importConfig" type="file" accept="application/json,.json" hidden></label></div>
           </form>
-          <p class="form-note">Aucun changement n’est transmis au PLC. Les boutons servent uniquement à essayer l’interface de configuration.</p>
+          <p class="form-note">Après un changement de paires actives, refaire la calibration des capteurs nouvellement activés puis le centre.</p>
         </div>
         <div class="panel">
-          <div class="panel-heading"><div><h2>Connexion matériel</h2><p>ESP32 PLC 19R envisagé · référence et variante analogique à confirmer.</p></div><span class="chip warn">Hors ligne</span></div>
-          <div class="field"><label for="wifiMode">Mode Wi-Fi</label><select id="wifiMode" disabled><option>Point d’accès du PLC (prévu)</option><option>Client / STA</option></select></div>
+          <div class="panel-heading"><div><h2>Connexion matériel</h2><p>ESP32 PLC 19R envisagé · référence et variante analogique à confirmer.</p></div></div>
+          <div class="field"><label for="wifiMode">Mode Wi-Fi</label><select id="wifiMode" disabled><option>Point d’accès du PLC</option><option>Client / STA</option></select></div>
           <div class="field" style="margin-top:12px"><label for="wifiName">Nom du réseau</label><input id="wifiName" value="PALPEUR-TRAXX" disabled></div>
           <div class="field" style="margin-top:12px"><label for="sampleFrequency">Rafraîchissement IHM cible</label><input id="sampleFrequency" value="20 Hz" disabled></div>
-          <p class="footer-note">La future configuration matérielle devra être validée avant écriture en NVS.</p>
+          <p class="footer-note">Deux paires exigent quatre entrées analogiques 0–10 V utilisables avec le Wi-Fi. Une voie non câblée apparaît en défaut capteur.</p>
         </div>
       </div>
     </section>
 
     <section class="view" id="view-calibration" role="tabpanel" hidden>
-      <div class="view-head"><div><p class="eyebrow">Assistant · deux capteurs</p><h1>Calibration</h1><p class="view-desc">Parcours de démonstration. Aucune valeur n’est capturée depuis un capteur réel.</p></div><span class="chip warn" id="calibrationState">Non calibré</span></div>
+      <div class="view-head"><div><p class="eyebrow" id="calEyebrow">Assistant · deux capteurs</p><h1>Calibration</h1><p class="view-desc">Seuls les capteurs des paires actives sont à calibrer.</p></div><span class="chip warn" id="calibrationState">Non calibré</span></div>
       <div class="split-layout">
         <div class="panel">
-          <div class="panel-heading"><div><h2>Procédure</h2><p>À effectuer séparément pour chaque bras.</p></div></div>
-          <div class="cal-steps"><div class="cal-step"><strong>01 · Neutre</strong><span>Bras au repos, sans contact, lecture stable sur 2 s.</span></div><div class="cal-step"><strong>02 · Butées</strong><span>Balayer toute la course pendant 10 s après le démarrage.</span></div><div class="cal-step"><strong>03 · Centre</strong><span>Machine centrée dans un rang connu.</span></div></div>
-          <div class="cal-value"><div><strong>Neutre · gauche</strong><small id="neutralLeftStatus">À capturer · moyenne simulée sur 2 s</small></div><button class="btn" type="button" data-capture="neutralLeft">Capturer</button></div>
-          <div class="cal-value"><div><strong>Neutre · droite</strong><small id="neutralRightStatus">À capturer · moyenne simulée sur 2 s</small></div><button class="btn" type="button" data-capture="neutralRight">Capturer</button></div>
-          <div class="cal-value"><div><strong>Butées · gauche / droite</strong><small id="endpointsStatus">Min/max nominaux non capturés</small></div><button class="btn" type="button" data-capture="endpoints">Capturer min/max</button></div>
+          <div class="panel-heading"><div><h2>Procédure</h2><p>Neutre capteur par capteur, puis butées, puis centre.</p></div></div>
+          <div class="cal-steps"><div class="cal-step"><strong>01 · Neutre</strong><span>Bras au repos, sans contact, lecture stable sur 2 s.</span></div><div class="cal-step"><strong>02 · Butées</strong><span>Balayer à fond tous les bras actifs pendant 10 s.</span></div><div class="cal-step"><strong>03 · Centre</strong><span>Machine centrée et alignée dans un rang connu. Avec 2 paires, remet aussi le cap à zéro.</span></div></div>
+          <div class="cal-value" id="neutralRow-front_left"><div><strong>Neutre · avant gauche</strong><small id="neutralStatus-front_left">À capturer</small></div><button class="btn" type="button" data-capture="neutral_front_left">Capturer</button></div>
+          <div class="cal-value" id="neutralRow-front_right"><div><strong>Neutre · avant droit</strong><small id="neutralStatus-front_right">À capturer</small></div><button class="btn" type="button" data-capture="neutral_front_right">Capturer</button></div>
+          <div class="cal-value" id="neutralRow-rear_left"><div><strong>Neutre · arrière gauche</strong><small id="neutralStatus-rear_left">À capturer</small></div><button class="btn" type="button" data-capture="neutral_rear_left">Capturer</button></div>
+          <div class="cal-value" id="neutralRow-rear_right"><div><strong>Neutre · arrière droit</strong><small id="neutralStatus-rear_right">À capturer</small></div><button class="btn" type="button" data-capture="neutral_rear_right">Capturer</button></div>
+          <div class="cal-value"><div><strong>Butées · tous les bras actifs</strong><small id="endpointsStatus">Min/max non capturés</small></div><button class="btn" type="button" data-capture="endpoints">Capturer min/max</button></div>
           <div class="cal-value"><div><strong>Centre latéral</strong><small id="centerStatus">Biais de référence non défini</small></div><button class="btn" type="button" data-capture="center">Définir</button></div>
           <div class="form-actions"><button class="btn danger" id="resetCalibration" type="button">Réinitialiser la calibration</button></div>
         </div>
         <div class="panel">
-          <div class="panel-heading"><div><h2>Valeurs live</h2><p>Simulation des deux voies analogiques.</p></div><span class="chip sim">Démo</span></div>
-          <div class="sensor-mini"><div class="sensor-cell"><div class="sensor-title">NEUTRE GAUCHE</div><div class="sensor-reading" id="calLeftVoltage">2.94 V</div><div class="sensor-detail">Lecture simulée</div></div><div class="sensor-cell"><div class="sensor-title">NEUTRE DROIT</div><div class="sensor-reading" id="calRightVoltage">2.06 V</div><div class="sensor-detail">Lecture simulée</div></div></div>
-          <p class="form-note">La calibration réelle devra contrôler la stabilité avant capture et vérifier que les butées observées sont cohérentes avec la plage attendue.</p>
+          <div class="panel-heading"><div><h2>Valeurs live</h2><p>Tensions des voies analogiques.</p></div></div>
+          <div class="sensor-mini">
+            <div class="sensor-cell" id="calCell-front_left"><div class="sensor-title">AV GAUCHE</div><div class="sensor-reading" id="calV-front_left">—</div></div>
+            <div class="sensor-cell" id="calCell-front_right"><div class="sensor-title">AV DROIT</div><div class="sensor-reading" id="calV-front_right">—</div></div>
+            <div class="sensor-cell" id="calCell-rear_left"><div class="sensor-title">AR GAUCHE</div><div class="sensor-reading" id="calV-rear_left">—</div></div>
+            <div class="sensor-cell" id="calCell-rear_right"><div class="sensor-title">AR DROIT</div><div class="sensor-reading" id="calV-rear_right">—</div></div>
+          </div>
+          <p class="form-note">La capture du neutre est refusée si la tension n’est pas stable. Les butées sont validées si chaque bras balaie au moins 2 V.</p>
         </div>
       </div>
     </section>
 
     <section class="view" id="view-diagnostics" role="tabpanel" hidden>
-      <div class="view-head"><div><p class="eyebrow">Système · état local</p><h1>Diagnostic</h1><p class="view-desc">Version, simulation, export navigateur et préparation OTA.</p></div><span class="chip sim">Mode démo</span></div>
+      <div class="view-head"><div><p class="eyebrow">Système · état local</p><h1>Diagnostic</h1><p class="view-desc">Version, simulation, export navigateur et OTA.</p></div></div>
       <div class="diag-grid">
-        <div class="diag-item"><div class="diag-label">Firmware</div><div class="diag-value">Non chargé</div><div class="diag-sub">Maquette HTML locale</div></div>
-        <div class="diag-item"><div class="diag-label">Uptime démo</div><div class="diag-value" id="uptimeValue">00:00</div><div class="diag-sub">Depuis l’ouverture de la page</div></div>
-        <div class="diag-item"><div class="diag-label">Taux de données</div><div class="diag-value" id="rateValue">10 Hz</div><div class="diag-sub">Cadence du simulateur de page</div></div>
-        <div class="diag-item"><div class="diag-label">Wi-Fi / PLC</div><div class="diag-value">Non connecté</div><div class="diag-sub">Aucun endpoint API configuré</div></div>
-        <div class="diag-item"><div class="diag-label">CAN</div><div class="diag-value">Désactivé</div><div class="diag-sub">Non utilisé dans le POC UI</div></div>
-        <div class="diag-item"><div class="diag-label">Configuration</div><div class="diag-value" id="configState">Locale</div><div class="diag-sub">Stockage navigateur</div></div>
+        <div class="diag-item"><div class="diag-label">Source</div><div class="diag-value" id="sourceValue">Page locale</div><div class="diag-sub" id="sourceSub">Simulateur intégré</div></div>
+        <div class="diag-item"><div class="diag-label">Uptime page</div><div class="diag-value" id="uptimeValue">00:00</div><div class="diag-sub">Depuis l’ouverture de la page</div></div>
+        <div class="diag-item"><div class="diag-label">Taux de données</div><div class="diag-value" id="rateValue">—</div><div class="diag-sub">Échantillons reçus par seconde</div></div>
+        <div class="diag-item"><div class="diag-label">Paires actives</div><div class="diag-value" id="pairsDiag">Avant</div><div class="diag-sub">Selon la configuration</div></div>
+        <div class="diag-item"><div class="diag-label">CAN</div><div class="diag-value">Désactivé</div><div class="diag-sub">Matériel et IDs à confirmer</div></div>
+        <div class="diag-item"><div class="diag-label">Configuration</div><div class="diag-value" id="configState">Locale</div><div class="diag-sub">Dernière action</div></div>
       </div>
       <div class="split-layout" style="margin-top:14px">
         <div class="panel">
           <div class="panel-heading"><div><h2>Export des mesures</h2><p>Enregistrement local dans le navigateur.</p></div><span class="chip" id="recordingState">Arrêté</span></div>
-          <p class="subtle-text">Les échantillons enregistrés sont simulés; le CSV ne doit pas être utilisé comme donnée de mesure.</p>
+          <p class="subtle-text">Le CSV contient le décalage, le cap et les quatre voies (vides pour une paire désactivée).</p>
           <div class="form-actions"><button class="btn primary" type="button" id="toggleRecording"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="7"/></svg>Démarrer l’enregistrement</button><button class="btn" type="button" id="downloadCsv" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 20h14"/></svg>Exporter CSV</button></div>
         </div>
         <div class="panel">
-          <div class="panel-heading"><div><h2>Mise à jour OTA</h2><p>Fonction disponible après intégration au firmware.</p></div><span class="chip warn">Non connecté</span></div>
+          <div class="panel-heading"><div><h2>Mise à jour OTA</h2><p>Envoi d’un firmware au PLC par le Wi-Fi local.</p></div></div>
           <div class="field"><label for="firmwareFile">Fichier firmware `.bin`</label><input id="firmwareFile" type="file" accept=".bin,application/octet-stream"></div>
-          <div class="form-actions"><button class="btn" type="button" id="otaButton">Vérifier le fichier</button></div>
-          <p class="footer-note">Cette maquette ne transmet aucun fichier. L’OTA réelle sera servie par le PLC sur le Wi-Fi local.</p>
+          <div class="form-actions"><button class="btn" type="button" id="otaButton">Envoyer au PLC</button></div>
+          <p class="footer-note">En ouverture directe du fichier, aucun envoi n’est effectué.</p>
         </div>
       </div>
       <div class="panel" style="margin-top:14px">
-        <div class="panel-heading"><div><h2>Journal</h2><p>Événements de la maquette.</p></div><button class="btn" type="button" id="clearLog">Effacer</button></div>
+        <div class="panel-heading"><div><h2>Journal</h2><p>Événements de la page.</p></div><button class="btn" type="button" id="clearLog">Effacer</button></div>
         <div id="logList" class="mono" style="display:grid;gap:7px;font-size:11px;color:var(--ink-soft)"></div>
       </div>
     </section>
-    <p class="footer-note">Palpeur TRAXX · prototype d’interface · aucune donnée matérielle active en mode fichier.</p>
+    <p class="footer-note">Palpeur TRAXX · prototype · lecture seule, aucune commande machine.</p>
   </main>
   <div class="toast" id="toast" role="status" hidden></div>
 
   <script>
     (() => {
-      const defaults = {
-        pivotSpacing: 0.525, armLength: 0.35, contactLength: 0.35,
-        armDirection: "forward", frontOffset: 0.4, trackWidth: 1.16,
-        estimator: "v1", contactThreshold: 3, hysteresis: 1,
-        medianWindow: 5, publishRate: 50
+      // ---------- Constantes ----------
+      const SENSOR_IDS = ["front_left", "front_right", "rear_left", "rear_right"];
+      const PAIRS = ["front", "rear"];
+      const PAIR_LABELS = { front: "Paire avant", rear: "Paire arrière" };
+      const ACTIVE_LABELS = { front: "1 paire · avant", rear: "1 paire · arrière", both: "2 paires · avant + arrière" };
+      const REASONS = {
+        none: "Double contact", left_free: "Bras gauche libre", right_free: "Bras droit libre",
+        both_free: "Deux bras libres", left_sensor_fault: "Défaut capteur gauche",
+        right_sensor_fault: "Défaut capteur droit", both_sensor_fault: "Défaut des deux capteurs",
+        calibration_invalid: "Calibration invalide", geometry_invalid: "Géométrie invalide",
+        pair_disabled: "Désactivée"
       };
-      const storageKey = "palpeur-traxx-poc-config-v1";
+      const REFERENCES = {
+        wheelbase_center: "au centre d’empattement", front_pair: "à la paire avant", rear_pair: "à la paire arrière"
+      };
+      const OBJECT_RADIUS_M = 0.05;
+
+      const defaults = {
+        activePairs: "front", wheelbase: 3.85,
+        frontOffset: 0.4, frontArmDirection: "forward",
+        rearOffset: -0.4, rearArmDirection: "forward",
+        pivotSpacing: 0.525, armLength: 0.35, contactLength: 0.35, trackWidth: 1.16,
+        estimator: "v1", contactThreshold: 3, hysteresis: 1, medianWindow: 5, publishRate: 50
+      };
+      const fields = Object.keys(defaults);
+      const storageKey = "palpeur-traxx-config-v2";
+      const httpApiAvailable = location.protocol === "http:" || location.protocol === "https:";
+
+      // ---------- État ----------
       let config = loadConfig();
+      let state = null;          // dernier état, au format de /api/state
       let running = true;
       let recording = false;
-      let startedAt = Date.now();
-      let sampleCount = 0;
-      let captured = { neutralLeft: false, neutralRight: false, endpoints: false, center: false };
+      const startedAt = Date.now();
+      let samples = [];          // { time, offset (cm|null), heading (°|null) }
+      let receivedTimes = [];
       let hardwareCalibration = null;
-      let samples = [];
+      let localCal = newLocalCalibration();
       let logEntries = [];
       let toastTimer;
-      let mockPollInFlight = false;
-      const httpApiAvailable = location.protocol === "http:";
-      let current = { offset: 2.8, leftAngle: 24, rightAngle: -23.5, leftV: 2.94, rightV: 2.06, leftContact: true, rightContact: true };
+      let pollInFlight = false;
+      let apiConnected = false;
 
       const $ = (id) => document.getElementById(id);
       const tabs = [...document.querySelectorAll(".tab")];
-      const fields = ["pivotSpacing", "armLength", "contactLength", "armDirection", "frontOffset", "trackWidth", "estimator", "contactThreshold", "hysteresis", "medianWindow", "publishRate"];
 
       function loadConfig() {
         try { return { ...defaults, ...JSON.parse(localStorage.getItem(storageKey) || "{}") }; }
         catch { return { ...defaults }; }
       }
+      function saveConfigLocally() {
+        try { localStorage.setItem(storageKey, JSON.stringify(config)); } catch { }
+      }
+      function newLocalCalibration() {
+        return {
+          sensors: Object.fromEntries(SENSOR_IDS.map((id) => [id, { neutral: false, endpoints: false, neutral_v: null }])),
+          center: { front: false, rear: false }
+        };
+      }
 
+      const pairOf = (sensorId) => sensorId.split("_")[0];
+      const pairEnabled = (pair) => config.activePairs === "both" || config.activePairs === pair;
+      const pairX = (pair) => pair === "front" ? config.wheelbase + config.frontOffset : config.rearOffset;
+      const isNum = (value) => typeof value === "number" && Number.isFinite(value);
+      const signed = (value, digits) => isNum(value) ? `${value >= 0 ? "+" : "−"}${Math.abs(value).toFixed(digits)}` : "—";
+      const sensorOf = (s, id) => s?.[`${pairOf(id)}_pair`]?.[id.endsWith("left") ? "left" : "right"];
+
+      // ---------- Utilitaires d'interface ----------
       function toast(message) {
         const node = $("toast");
         node.textContent = message;
@@ -402,25 +459,25 @@
         clearTimeout(toastTimer);
         toastTimer = setTimeout(() => { node.hidden = true; }, 2800);
       }
-
+      function escapeHtml(value) {
+        return String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+      }
       function log(message) {
         const now = new Date().toLocaleTimeString("fr-FR", { hour12: false });
         logEntries.unshift(`${now}  ${message}`);
         logEntries = logEntries.slice(0, 12);
         $("logList").innerHTML = logEntries.map((entry) => `<div>${escapeHtml(entry)}</div>`).join("");
       }
-
-      function escapeHtml(value) {
-        return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+      function setPill(node, kind, text) {
+        node.className = `state-pill${kind ? " " + kind : ""}`;
+        node.innerHTML = `<i class="dot"></i>${escapeHtml(text)}`;
       }
-
       function switchView(name) {
         tabs.forEach((tab) => tab.setAttribute("aria-selected", String(tab.dataset.view === name)));
         document.querySelectorAll(".view").forEach((view) => { view.hidden = view.id !== `view-${name}`; });
         if (name === "live") drawCanvases();
         if (name === "calibration") refreshCalibrationState();
       }
-
       tabs.forEach((tab) => tab.addEventListener("click", () => switchView(tab.dataset.view)));
 
       function fillForm() {
@@ -430,129 +487,269 @@
         });
       }
 
-      function updateViews() {
-        const offsetText = `${current.offset >= 0 ? "+" : "−"}${Math.abs(current.offset).toFixed(1)}`;
-        $("offsetValue").innerHTML = `${offsetText}<small>cm</small>`;
-        $("leftAngle").textContent = `${current.leftAngle >= 0 ? "+" : "−"}${Math.abs(current.leftAngle).toFixed(1)}°`;
-        $("rightAngle").textContent = `${current.rightAngle >= 0 ? "+" : "−"}${Math.abs(current.rightAngle).toFixed(1)}°`;
-        $("leftVoltage").textContent = `${current.leftV.toFixed(2)} V`;
-        $("rightVoltage").textContent = `${current.rightV.toFixed(2)} V`;
-        $("tableLeftVoltage").textContent = `${current.leftV.toFixed(2)} V`;
-        $("tableRightVoltage").textContent = `${current.rightV.toFixed(2)} V`;
-        $("tableLeftRaw").textContent = `${current.leftAngle >= 0 ? "+" : "−"}${Math.abs(current.leftAngle).toFixed(1)}°`;
-        $("tableRightRaw").textContent = `${current.rightAngle >= 0 ? "+" : "−"}${Math.abs(current.rightAngle).toFixed(1)}°`;
-        $("tableLeftFiltered").textContent = `${(current.leftAngle - 0.2).toFixed(1)}°`;
-        $("tableRightFiltered").textContent = `${(current.rightAngle + 0.3).toFixed(1)}°`;
-        $("calLeftVoltage").textContent = `${current.leftV.toFixed(2)} V`;
-        $("calRightVoltage").textContent = `${current.rightV.toFixed(2)} V`;
-        $("sampleTime").textContent = `Mise à jour ${new Date().toLocaleTimeString("fr-FR", { hour12: false })}`;
-        $("leftContactMeta").textContent = current.leftContact ? "Contact détecté" : "Bras libre";
-        $("rightContactMeta").textContent = current.rightContact ? "Contact détecté" : "Bras libre";
+      // ---------- Simulateur de page (même modèle que tools/mock_server.py) ----------
+      function simulatedPair(pair, rowY, t) {
+        const empty = { voltage_v: null, angle_raw_deg: null, angle_filtered_deg: null, contact: false, fault: false };
+        if (!pairEnabled(pair)) {
+          return { enabled: false, valid: false, reason: "pair_disabled", x_m: pairX(pair), row_y_m: null, apparent_width_m: null, left: { ...empty }, right: { ...empty } };
+        }
+        const half = config.pivotSpacing / 2, reach = config.contactLength;
+        const clamp = (v) => Math.max(-1, Math.min(1, v));
+        const jitter = 0.15 * Math.sin(t * 2.3 + (pair === "front" ? 0 : 1.7));
+        const angles = {
+          left: Math.asin(clamp((half - (rowY + OBJECT_RADIUS_M)) / reach)) * 180 / Math.PI + jitter,
+          right: Math.asin(clamp((half + (rowY - OBJECT_RADIUS_M)) / reach)) * 180 / Math.PI - jitter
+        };
+        const side = (angle) => ({ voltage_v: 0.5 + (angle + 90) * 4 / 180, angle_raw_deg: angle, angle_filtered_deg: angle - jitter * 0.8, contact: true, fault: false });
+        return { enabled: true, valid: true, reason: "none", x_m: pairX(pair), row_y_m: rowY, apparent_width_m: 2 * OBJECT_RADIUS_M, left: side(angles.left), right: side(angles.right) };
       }
 
-      function updateSimulation() {
-        const time = (Date.now() - startedAt) / 1000;
-        current.offset = 3.1 * Math.sin(time * 0.32) + 1.2 * Math.sin(time * 0.11);
-        current.leftAngle = 23.8 + 1.8 * Math.sin(time * 0.55) + 0.3 * Math.sin(time * 2.3);
-        current.rightAngle = -23.5 - 1.5 * Math.sin(time * 0.49) + 0.25 * Math.sin(time * 2.1);
-        current.leftV = 2.94 + 0.04 * Math.sin(time * 0.8);
-        current.rightV = 2.06 + 0.035 * Math.sin(time * 0.72);
-        current.leftContact = true;
-        current.rightContact = true;
-        sampleCount++;
+      function computePose(front, rear) {
+        const pose = { lateral_valid: false, heading_valid: false, estimated: false, reason: "none", lateral_offset_m: null, lateral_reference: null, lateral_reference_x_m: null, heading_deg: null, offsets: null };
+        if (front.valid && rear.valid) {
+          const sep = front.x_m - rear.x_m;
+          const offsetAt = (x) => -(rear.row_y_m + (front.row_y_m - rear.row_y_m) * (x - rear.x_m) / sep);
+          Object.assign(pose, {
+            lateral_valid: true, heading_valid: true,
+            lateral_offset_m: offsetAt(config.wheelbase / 2), lateral_reference: "wheelbase_center", lateral_reference_x_m: config.wheelbase / 2,
+            heading_deg: -Math.atan2(front.row_y_m - rear.row_y_m, sep) * 180 / Math.PI,
+            offsets: { rear_axle_m: offsetAt(0), wheelbase_center_m: offsetAt(config.wheelbase / 2), front_axle_m: offsetAt(config.wheelbase) }
+          });
+        } else if (front.valid || rear.valid) {
+          const valid = front.valid ? front : rear;
+          Object.assign(pose, { lateral_valid: true, lateral_offset_m: -valid.row_y_m, lateral_reference: front.valid ? "front_pair" : "rear_pair", lateral_reference_x_m: valid.x_m });
+        }
+        return pose;
+      }
+
+      function localState() {
+        const t = (Date.now() - startedAt) / 1000;
+        const fx = pairX("front"), rx = pairX("rear"), mx = (fx + rx) / 2;
+        const rowYMiddle = 0.031 * Math.sin(t * 0.32) + 0.012 * Math.sin(t * 0.11);
+        const slope = Math.tan(0.012 * Math.sin(t * 0.18));
+        const front = simulatedPair("front", rowYMiddle + slope * (fx - mx), t);
+        const rear = simulatedPair("rear", rowYMiddle + slope * (rx - mx), t);
+        return { timestamp_ms: Date.now() - startedAt, simulation: true, active_pairs: config.activePairs, front_pair: front, rear_pair: rear, pose: computePose(front, rear), can: { enabled: false, state: "disabled" } };
+      }
+
+      // ---------- Réception d'un état (page locale, mock ou PLC) ----------
+      function ingest(next) {
+        state = next;
         const stamp = Date.now();
-        samples.push({ time: stamp, offset: current.offset, angle: current.leftAngle });
+        receivedTimes.push(stamp);
+        receivedTimes = receivedTimes.filter((time) => stamp - time <= 1000);
+        const pose = next.pose || {};
+        samples.push({
+          time: stamp,
+          offset: pose.lateral_valid && isNum(pose.lateral_offset_m) ? pose.lateral_offset_m * 100 : null,
+          heading: pose.heading_valid && isNum(pose.heading_deg) ? pose.heading_deg : null
+        });
         samples = samples.filter((sample) => stamp - sample.time <= 30000);
         if (recording) logCsvSample(stamp);
-        updateViews();
+        render();
         drawCanvases();
       }
 
-      async function pollMockState() {
-        if (mockPollInFlight) return;
-        mockPollInFlight = true;
+      async function pollApiState() {
+        if (pollInFlight) return;
+        pollInFlight = true;
         try {
           const response = await fetch("/api/state", { cache: "no-store" });
           if (!response.ok) throw new Error("API indisponible");
-          const state = await response.json();
-          current.offset = Number(state.pose.lateral_offset_m) * 100;
-          current.leftAngle = Number(state.front_pair.left.angle_raw_deg);
-          current.rightAngle = Number(state.front_pair.right.angle_raw_deg);
-          current.leftV = Number(state.front_pair.left.voltage_v);
-          current.rightV = Number(state.front_pair.right.voltage_v);
-          current.leftContact = Boolean(state.front_pair.left.contact);
-          current.rightContact = Boolean(state.front_pair.right.contact);
-          $("connectionChip").innerHTML = `<i class="dot"></i>${state.simulation ? "Mock HTTP connecté" : "PLC connecté"}`;
-          $("connectionChip").className = "chip good";
-          sampleCount++;
-          const stamp = Date.now();
-          samples.push({ time: stamp, offset: current.offset, angle: current.leftAngle });
-          samples = samples.filter((sample) => stamp - sample.time <= 30000);
-          if (recording) logCsvSample(stamp);
-          updateViews();
-          drawCanvases();
+          const next = await response.json();
+          if (!apiConnected) { apiConnected = true; log(next.simulation ? "Connecté au serveur (simulation)" : "Connecté au PLC"); }
+          $("connectionChip").innerHTML = `<i class="dot"></i>${next.simulation ? "Connecté · simulation" : "PLC connecté"}`;
+          $("connectionChip").className = next.simulation ? "chip sim" : "chip good";
+          if (next.active_pairs && next.active_pairs !== config.activePairs) { config.activePairs = next.active_pairs; fillForm(); }
+          ingest(next);
         } catch {
+          apiConnected = false;
           $("connectionChip").innerHTML = '<i class="dot"></i>Simulation locale';
           $("connectionChip").className = "chip sim";
-          if (running) updateSimulation();
+          if (running) ingest(localState());
         } finally {
-          mockPollInFlight = false;
+          pollInFlight = false;
         }
       }
 
+      // ---------- Rendu ----------
+      function render() {
+        const s = state;
+        if (!s) return;
+        const pose = s.pose || {};
+        const active = s.active_pairs || config.activePairs;
+        const simulated = s.simulation !== false;
+
+        $("brandSubtitle").textContent = `POC · ${ACTIVE_LABELS[active] || active}`;
+        $("liveEyebrow").textContent = `Vue principale · ${ACTIVE_LABELS[active] || active}`;
+        $("calEyebrow").textContent = `Assistant · ${active === "both" ? "quatre" : "deux"} capteurs`;
+        $("pairsChip").textContent = active === "both" ? "2 paires" : "1 paire";
+        $("pairsDiag").textContent = { front: "Avant", rear: "Arrière", both: "Avant + arrière" }[active] || active;
+        $("demoBanner").hidden = !simulated;
+        $("sceneChip").hidden = !simulated;
+        $("sensorsSource").textContent = simulated ? "Tensions simulées." : "Tensions lues sur le PLC.";
+        $("sourceValue").textContent = apiConnected ? (simulated ? "Serveur simulé" : "PLC") : "Page locale";
+        $("sourceSub").textContent = apiConnected ? location.host : "Simulateur intégré";
+
+        // Décalage
+        if (pose.lateral_valid && isNum(pose.lateral_offset_m)) {
+          $("offsetValue").innerHTML = `${signed(pose.lateral_offset_m * 100, 1)}<small>cm</small>`;
+          $("offsetValue").className = "metric-value number";
+          $("offsetNote").textContent = `${REFERENCES[pose.lateral_reference] || ""} · positif = machine à gauche du rang`;
+        } else {
+          $("offsetValue").textContent = "Indisponible";
+          $("offsetValue").className = "metric-value not-available";
+          $("offsetNote").textContent = REASONS[pose.reason] || "Aucune paire valide";
+        }
+        // Cap
+        if (pose.heading_valid && isNum(pose.heading_deg)) {
+          $("headingValue").innerHTML = `${signed(pose.heading_deg, 2)}<small>°</small>`;
+          $("headingValue").className = "metric-value number";
+          const o = pose.offsets || {};
+          $("headingNote").textContent = `Essieu AR ${signed((o.rear_axle_m ?? NaN) * 100, 1)} cm · essieu AV ${signed((o.front_axle_m ?? NaN) * 100, 1)} cm`;
+        } else {
+          $("headingValue").textContent = "Indisponible";
+          $("headingValue").className = "metric-value not-available";
+          $("headingNote").textContent = active === "both" ? "Il faut les deux paires valides" : "Une seule paire active";
+        }
+        // Synthèse des paires
+        const enabledPairs = PAIRS.filter((p) => s[`${p}_pair`]?.enabled);
+        const validCount = enabledPairs.filter((p) => s[`${p}_pair`].valid).length;
+        const summary = $("pairsSummary");
+        summary.innerHTML = `<i class="dot"></i>${validCount}/${enabledPairs.length} valide${validCount > 1 ? "s" : ""}`;
+        summary.style.color = validCount === enabledPairs.length ? "var(--green)" : validCount ? "#865017" : "var(--red)";
+        $("sampleTime").textContent = `Mise à jour ${new Date().toLocaleTimeString("fr-FR", { hour12: false })}`;
+
+        PAIRS.forEach((p) => {
+          const pair = s[`${p}_pair`] || { enabled: false };
+          if (!pair.enabled) {
+            setPill($(`pairPill-${p}`), "off", "DÉSACTIVÉE");
+            $(`pairMeta-${p}`).textContent = "Non utilisée dans la configuration";
+            return;
+          }
+          setPill($(`pairPill-${p}`), pair.valid ? "" : (pair.reason || "").includes("fault") ? "bad" : "warn", pair.valid ? "VALIDE" : "INVALIDE");
+          const arm = (side) => pair[side]?.fault ? "défaut" : pair[side]?.contact ? "contact" : "libre";
+          const width = isNum(pair.apparent_width_m) ? ` · largeur ${(pair.apparent_width_m * 100).toFixed(1)} cm` : "";
+          $(`pairMeta-${p}`).textContent = pair.valid ? `G : ${arm("left")} · D : ${arm("right")}${width}` : (REASONS[pair.reason] || pair.reason);
+        });
+
+        // Capteurs
+        let anyFault = false;
+        SENSOR_IDS.forEach((id) => {
+          const enabled = Boolean(s[`${pairOf(id)}_pair`]?.enabled);
+          const sensor = sensorOf(s, id) || {};
+          if (enabled && sensor.fault) anyFault = true;
+          const angle = isNum(sensor.angle_filtered_deg) ? sensor.angle_filtered_deg : sensor.angle_raw_deg;
+          const volts = isNum(sensor.voltage_v) ? `${sensor.voltage_v.toFixed(2)} V` : "—";
+          $(`liveCell-${id}`).classList.toggle("off", !enabled);
+          $(`calCell-${id}`).classList.toggle("off", !enabled);
+          $(`row-${id}`).classList.toggle("off", !enabled);
+          $(`liveAngle-${id}`).textContent = enabled ? `${signed(angle, 1)}°` : "—";
+          $(`liveDetail-${id}`).textContent = !enabled ? "paire désactivée" : sensor.fault ? `${volts} · défaut` : `${volts} · ${sensor.contact ? "contact" : "libre"}`;
+          $(`calV-${id}`).textContent = enabled ? volts : "—";
+          $(`tv-${id}`).textContent = enabled ? volts : "—";
+          $(`traw-${id}`).textContent = enabled ? `${signed(sensor.angle_raw_deg, 1)}°` : "—";
+          $(`tfilt-${id}`).textContent = enabled ? `${signed(sensor.angle_filtered_deg, 1)}°` : "—";
+          $(`tcontact-${id}`).innerHTML = !enabled ? '<span class="subtle-text">Paire désactivée</span>'
+            : `<span class="state-pill${sensor.contact ? "" : " warn"}"><i class="dot"></i>${sensor.contact ? "Contact" : "Libre"}</span>`;
+          $(`tfault-${id}`).innerHTML = !enabled ? "" : sensor.fault ? '<span class="state-pill bad"><i class="dot"></i>Défaut</span>' : '<span class="subtle-text">Aucun</span>';
+        });
+        setPill($("sensorsPill"), anyFault ? "bad" : "", anyFault ? "DÉFAUT" : "OK");
+        $("rateValue").textContent = `${receivedTimes.length} Hz`;
+        renderCalibration();
+      }
+
+      // Vue de dessus : machine à l'échelle approximative, écarts du rang ×3 environ.
       function drawScene() {
         const canvas = $("sceneCanvas");
-        if (!canvas || canvas.offsetParent === null) return;
+        if (!canvas || canvas.offsetParent === null || !state) return;
         const rect = canvas.getBoundingClientRect();
         const ratio = window.devicePixelRatio || 1;
         canvas.width = Math.max(1, Math.floor(rect.width * ratio));
         canvas.height = Math.max(1, Math.floor(rect.height * ratio));
         const ctx = canvas.getContext("2d");
         ctx.scale(ratio, ratio);
-        const w = rect.width, h = rect.height, cx = w / 2, cy = h * 0.56;
-        ctx.clearRect(0, 0, w, h);
+        const w = rect.width, h = rect.height, cx = w / 2;
         ctx.fillStyle = "#f7f8f5";
         ctx.fillRect(0, 0, w, h);
-        ctx.strokeStyle = "#e4e9e4";
-        ctx.lineWidth = 1;
-        for (let y = 18; y < h; y += 24) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
-        const rowX = Math.max(28, Math.min(w - 28, cx - current.offset * 3.2));
-        ctx.strokeStyle = "#33815a";
-        ctx.lineWidth = 3;
-        ctx.setLineDash([9, 6]);
-        ctx.beginPath(); ctx.moveTo(rowX, 15); ctx.lineTo(rowX, h - 12); ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.fillStyle = "#537f61";
-        for (let y = 33; y < h - 20; y += 44) {
-          ctx.beginPath(); ctx.arc(rowX, y, 4, 0, Math.PI * 2); ctx.fill();
-          ctx.beginPath(); ctx.arc(rowX + 7, y + 11, 3, 0, Math.PI * 2); ctx.fill();
-        }
-        const bodyW = Math.min(95, w * 0.22), bodyH = Math.min(150, h * 0.52);
-        ctx.fillStyle = "#33443b";
-        ctx.beginPath(); ctx.roundRect(cx - bodyW / 2, cy - bodyH / 2, bodyW, bodyH, 9); ctx.fill();
-        ctx.fillStyle = "#52645a";
-        ctx.fillRect(cx - bodyW / 2 + 9, cy - bodyH / 2 + 15, bodyW - 18, 19);
+
+        const fx = pairX("front"), rx = pairX("rear");
+        const top = 70, bottom = h - 70;
+        const yOf = (x) => top + (fx - x) / Math.max(0.5, fx - rx) * (bottom - top);   // x machine → ordonnée écran
+        const k = Math.min(150, (w * 0.3) / config.pivotSpacing);                       // px/m machine
+        const rowScale = 320;                                                            // px/m rang (3,2 px/cm)
+        const rowXOf = (y) => Math.max(14, Math.min(w - 14, cx - y * rowScale));         // y à gauche → écran à gauche
+
+        // Machine
+        const bodyW = Math.min(config.trackWidth * k, w * 0.55);
+        const yFrontAxle = yOf(config.wheelbase), yRearAxle = yOf(0);
+        ctx.fillStyle = "rgba(51, 68, 59, 0.16)";
+        ctx.strokeStyle = "#41534a";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.roundRect(cx - bodyW / 2, yFrontAxle - 22, bodyW, yRearAxle - yFrontAxle + 44, 9); ctx.fill(); ctx.stroke();
         ctx.fillStyle = "#1c2822";
-        ctx.fillRect(cx - bodyW / 2 - 9, cy - bodyH / 2 + 21, 9, 31);
-        ctx.fillRect(cx + bodyW / 2, cy - bodyH / 2 + 21, 9, 31);
-        ctx.fillRect(cx - bodyW / 2 - 9, cy + bodyH / 2 - 52, 9, 31);
-        ctx.fillRect(cx + bodyW / 2, cy + bodyH / 2 - 52, 9, 31);
-        const pivotY = cy - bodyH * 0.23;
-        const pivotGap = Math.min(104, w * 0.3);
-        ctx.strokeStyle = "#c76b2c";
-        ctx.lineWidth = 4;
-        ctx.lineCap = "round";
-        ctx.beginPath(); ctx.moveTo(cx - pivotGap / 2, pivotY); ctx.lineTo(cx + 18, pivotY - 49); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(cx + pivotGap / 2, pivotY); ctx.lineTo(cx - 18, pivotY - 49); ctx.stroke();
-        ctx.fillStyle = "#c76b2c";
-        ctx.beginPath(); ctx.arc(cx - pivotGap / 2, pivotY, 5, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(cx + pivotGap / 2, pivotY, 5, 0, Math.PI * 2); ctx.fill();
+        [yFrontAxle, yRearAxle].forEach((y) => {
+          ctx.fillRect(cx - bodyW / 2 - 10, y - 16, 10, 32);
+          ctx.fillRect(cx + bodyW / 2, y - 16, 10, 32);
+        });
         ctx.fillStyle = "#35443b";
         ctx.font = "600 10px Segoe UI, sans-serif";
         ctx.textAlign = "center";
-        ctx.fillText("TRAXX", cx, cy + 5);
-        ctx.fillStyle = "#237b54";
-        ctx.fillText("axe du rang", Math.max(43, Math.min(w - 43, rowX)), 13);
+        ctx.fillText("TRAXX", cx, (yFrontAxle + yRearAxle) / 2 + 4);
+
+        // Rang
+        const front = state.front_pair || {}, rear = state.rear_pair || {};
+        const points = [front, rear].filter((p) => p.valid && isNum(p.row_y_m)).map((p) => ({ y: yOf(p.x_m ?? pairX(p === front ? "front" : "rear")), x: rowXOf(p.row_y_m) }));
+        ctx.lineWidth = 3;
+        ctx.setLineDash([9, 6]);
+        if (points.length) {
+          ctx.strokeStyle = "#33815a";
+          ctx.beginPath();
+          if (points.length === 2) {
+            const slope = (points[1].x - points[0].x) / (points[1].y - points[0].y);
+            ctx.moveTo(points[0].x + slope * (10 - points[0].y), 10);
+            ctx.lineTo(points[0].x + slope * (h - 10 - points[0].y), h - 10);
+          } else {
+            ctx.moveTo(points[0].x, 10); ctx.lineTo(points[0].x, h - 10);
+          }
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.fillStyle = "#237b54";
+          ctx.fillText("axe du rang", Math.max(43, Math.min(w - 43, points[0].x)), 12);
+        } else {
+          ctx.strokeStyle = "#c9cfc9";
+          ctx.beginPath(); ctx.moveTo(cx, 10); ctx.lineTo(cx, h - 10); ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.fillStyle = "#78827b";
+          ctx.fillText("rang non détecté", cx, 12);
+        }
+
+        // Palpeurs
+        const L = config.armLength * k, c = config.contactLength * k;
+        PAIRS.forEach((p) => {
+          const pair = state[`${p}_pair`] || {};
+          const py = yOf(pairX(p));
+          const s = (p === "front" ? config.frontArmDirection : config.rearArmDirection) === "backward" ? -1 : 1;
+          const pivots = { left: cx - (config.pivotSpacing / 2) * k, right: cx + (config.pivotSpacing / 2) * k };
+          ctx.textAlign = "left";
+          ctx.fillStyle = pair.enabled ? "#35443b" : "#a9b1aa";
+          ctx.fillText(p === "front" ? "AV" : "AR", pivots.right + 10, py + 4);
+          ["left", "right"].forEach((side) => {
+            const sensor = pair[side] || {};
+            const angle = isNum(sensor.angle_filtered_deg) ? sensor.angle_filtered_deg : sensor.angle_raw_deg;
+            const px = pivots[side];
+            const color = !pair.enabled ? "#c3c9c3" : sensor.fault ? "#b94343" : sensor.contact ? "#c76b2c" : "#8a948c";
+            if (pair.enabled && isNum(angle)) {
+              const rad = angle * Math.PI / 180;
+              const dx = (side === "left" ? 1 : -1) * Math.sin(rad), dy = -s * Math.cos(rad);
+              ctx.strokeStyle = color; ctx.lineWidth = 4; ctx.lineCap = "round";
+              ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + dx * L, py + dy * L); ctx.stroke();
+              if (sensor.contact) { ctx.fillStyle = "#17201c"; ctx.beginPath(); ctx.arc(px + dx * c, py + dy * c, 2.5, 0, Math.PI * 2); ctx.fill(); }
+            }
+            ctx.fillStyle = color;
+            ctx.beginPath(); ctx.arc(px, py, 5, 0, Math.PI * 2); ctx.fill();
+          });
+        });
       }
 
       function drawTrend() {
@@ -565,59 +762,77 @@
         const ctx = canvas.getContext("2d");
         ctx.scale(ratio, ratio);
         const w = rect.width, h = rect.height, left = 38, right = 10, top = 7, bottom = 22;
+        const plotW = w - left - right, plotH = h - top - bottom;
         ctx.clearRect(0, 0, w, h);
         ctx.font = "10px Segoe UI, sans-serif";
         ctx.fillStyle = "#78827b";
         ctx.strokeStyle = "#e2e7e2";
         ctx.lineWidth = 1;
         for (let i = 0; i <= 4; i++) {
-          const y = top + (h - top - bottom) * i / 4;
+          const y = top + plotH * i / 4;
           ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(w - right, y); ctx.stroke();
           ctx.textAlign = "right";
-          ctx.fillText(`${(4 - i) * 2 - 4}`, left - 7, y + 3);
+          ctx.fillText(`${6 - i * 3}`, left - 7, y + 3);
         }
         if (samples.length < 2) return;
         const first = samples[0].time, last = samples[samples.length - 1].time;
-        const plotW = w - left - right, plotH = h - top - bottom;
         const xAt = (time) => left + (time - first) / Math.max(1, last - first) * plotW;
         const plot = (key, min, max, color) => {
           ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.beginPath();
-          samples.forEach((sample, index) => {
-            const value = Math.max(min, Math.min(max, sample[key]));
+          let drawing = false;
+          samples.forEach((sample) => {
+            const raw = sample[key];
+            if (!isNum(raw)) { drawing = false; return; }   // trou = mesure indisponible
+            const value = Math.max(min, Math.min(max, raw));
             const x = xAt(sample.time), y = top + (max - value) / (max - min) * plotH;
-            if (index === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            if (drawing) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+            drawing = true;
           });
           ctx.stroke();
         };
-        plot("offset", -4, 4, "#237b54");
-        plot("angle", 18, 30, "#c76b2c");
+        plot("offset", -6, 6, "#237b54");
+        plot("heading", -2, 2, "#c76b2c");
       }
 
       function drawCanvases() { drawScene(); drawTrend(); }
 
+      // ---------- Calibration ----------
+      function calibrationView() {
+        if (hardwareCalibration?.sensors) return hardwareCalibration;
+        const sensors = Object.fromEntries(SENSOR_IDS.map((id) => {
+          const item = localCal.sensors[id];
+          return [id, { enabled: pairEnabled(pairOf(id)), neutral: item.neutral, neutral_v: item.neutral_v, endpoints: item.endpoints, calibrated: item.neutral && item.endpoints }];
+        }));
+        const calibrated = Object.values(sensors).filter((item) => item.enabled).every((item) => item.calibrated);
+        return { sensors, center: { ...localCal.center }, capturing_endpoints: false, capture_remaining_ms: 0, calibrated, demo: true };
+      }
+
       function renderCalibration() {
-        const neutralLeft = hardwareCalibration ? hardwareCalibration.neutral_left : captured.neutralLeft;
-        const neutralRight = hardwareCalibration ? hardwareCalibration.neutral_right : captured.neutralRight;
-        const endpoints = hardwareCalibration ? hardwareCalibration.endpoints : captured.endpoints;
-        const center = hardwareCalibration ? hardwareCalibration.center : captured.center;
-        $("neutralLeftStatus").textContent = neutralLeft
-          ? `Capturé · ${hardwareCalibration?.left_neutral_v?.toFixed(2) ?? current.leftV.toFixed(2)} V${hardwareCalibration ? "" : " (démo)"}`
-          : "À capturer · moyenne stable sur 2 s";
-        $("neutralRightStatus").textContent = neutralRight
-          ? `Capturé · ${hardwareCalibration?.right_neutral_v?.toFixed(2) ?? current.rightV.toFixed(2)} V${hardwareCalibration ? "" : " (démo)"}`
-          : "À capturer · moyenne stable sur 2 s";
-        $("endpointsStatus").textContent = hardwareCalibration?.capturing_endpoints
-          ? `Balayage en cours · ${Math.ceil(hardwareCalibration.capture_remaining_ms / 1000)} s restantes`
-          : endpoints ? `Min/max capturés${hardwareCalibration ? "" : " (démo)"}` : "Min/max non capturés";
-        $("centerStatus").textContent = center ? `Biais de référence défini${hardwareCalibration ? "" : " (démo)"}` : "Biais de référence non défini";
-        const complete = hardwareCalibration ? hardwareCalibration.calibrated : Object.values(captured).every(Boolean);
-        $("calibrationBadge").textContent = complete ? (hardwareCalibration ? "Calibré" : "Démo calibrée") : "À effectuer";
-        $("calibrationState").textContent = complete ? (hardwareCalibration ? "Calibré" : "Démo calibrée") : "Non calibré";
-        $("calibrationState").className = `chip ${complete ? "good" : "warn"}`;
+        const cal = calibrationView();
+        const demo = cal.demo ? " (démo)" : "";
+        SENSOR_IDS.forEach((id) => {
+          const item = cal.sensors[id] || {};
+          $(`neutralRow-${id}`).hidden = !item.enabled;
+          $(`neutralStatus-${id}`).textContent = item.neutral
+            ? `Capturé${isNum(item.neutral_v) ? ` · ${item.neutral_v.toFixed(2)} V` : ""}${demo}`
+            : "À capturer · moyenne stable sur 2 s";
+        });
+        const enabledSensors = SENSOR_IDS.filter((id) => cal.sensors[id]?.enabled);
+        const endpointsDone = enabledSensors.filter((id) => cal.sensors[id].endpoints).length;
+        $("endpointsStatus").textContent = cal.capturing_endpoints
+          ? `Balayage en cours · ${Math.ceil(cal.capture_remaining_ms / 1000)} s restantes`
+          : `${endpointsDone}/${enabledSensors.length} bras validés${demo}`;
+        const centerParts = PAIRS.filter(pairEnabled).map((p) => `${p === "front" ? "AV" : "AR"} ${cal.center?.[p] ? "défini" : "non défini"}`);
+        $("centerStatus").textContent = `${centerParts.join(" · ")}${demo}`;
+        const text = cal.calibrated ? (cal.demo ? "Démo calibrée" : "Calibré") : "À effectuer";
+        $("calibrationBadge").textContent = text;
+        $("calibrationBadge").className = `chip ${cal.calibrated ? "good" : "warn"}`;
+        $("calibrationState").textContent = cal.calibrated ? text : "Non calibré";
+        $("calibrationState").className = `chip ${cal.calibrated ? "good" : "warn"}`;
       }
 
       async function refreshCalibrationState() {
-        if (!httpApiAvailable) return;
+        if (!apiConnected) { renderCalibration(); return; }
         try {
           const response = await fetch("/api/calibration", { cache: "no-store" });
           if (!response.ok) return;
@@ -627,37 +842,45 @@
       }
 
       document.querySelectorAll("[data-capture]").forEach((button) => button.addEventListener("click", async () => {
-        if (httpApiAvailable) {
-          const apiNames = { neutralLeft: "neutral_left", neutralRight: "neutral_right", endpoints: "endpoints", center: "center" };
-          const response = await fetch("/api/calibration/capture", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: apiNames[button.dataset.capture] }) }).catch(() => null);
+        const name = button.dataset.capture;
+        if (apiConnected) {
+          const response = await fetch("/api/calibration/capture", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) }).catch(() => null);
           const result = await response?.json().catch(() => ({}));
-          if (!response?.ok) {
-            toast(result?.error || "Capture calibration refusée.");
-            return;
-          }
+          if (!response?.ok) { toast(result?.error || "Capture calibration refusée."); return; }
           await refreshCalibrationState();
-          toast(result?.capturing ? "Balayage démarré : déplacer les deux bras pendant 10 secondes." : "Capture calibration effectuée.");
+          toast(result?.capturing ? "Balayage démarré : déplacer tous les bras actifs pendant 10 secondes." : "Capture calibration effectuée.");
+          log(`Calibration : ${name}`);
           return;
         }
-        captured[button.dataset.capture] = true;
+        if (name.startsWith("neutral_")) {
+          const id = name.slice("neutral_".length);
+          localCal.sensors[id].neutral = true;
+          localCal.sensors[id].neutral_v = sensorOf(state, id)?.voltage_v ?? null;
+        } else if (name === "endpoints") {
+          SENSOR_IDS.filter((id) => pairEnabled(pairOf(id))).forEach((id) => { localCal.sensors[id].endpoints = true; });
+        } else if (name === "center") {
+          PAIRS.filter(pairEnabled).forEach((p) => { localCal.center[p] = true; });
+        }
         renderCalibration();
-        log(`Calibration simulée : ${button.textContent.toLowerCase()}`);
+        log(`Calibration simulée : ${name}`);
         toast("Capture de démonstration uniquement; aucun capteur réel n’est lu.");
       }));
+
       $("resetCalibration").addEventListener("click", async () => {
-        if (httpApiAvailable) {
+        if (!confirm("Réinitialiser la calibration de tous les capteurs ?")) return;
+        if (apiConnected) {
           const response = await fetch("/api/calibration/reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => null);
           if (!response?.ok) { toast("Réinitialisation de calibration refusée."); return; }
-          hardwareCalibration = await response.json().catch(() => null);
           await refreshCalibrationState();
-          toast("Calibration réinitialisée dans le PLC.");
+          toast("Calibration réinitialisée.");
+          log("Calibration réinitialisée");
           return;
         }
-        captured = { neutralLeft: false, neutralRight: false, endpoints: false, center: false };
+        localCal = newLocalCalibration();
         renderCalibration(); log("Calibration locale réinitialisée"); toast("Calibration de démonstration réinitialisée.");
-        if (httpApiAvailable) await fetch("/api/calibration/reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => {});
       });
 
+      // ---------- Paramètres ----------
       $("settingsForm").addEventListener("submit", async (event) => {
         event.preventDefault();
         const next = {};
@@ -665,30 +888,36 @@
           const input = document.querySelector(`[name="${name}"]`);
           next[name] = input.type === "number" ? Number(input.value) : input.value;
         });
-        if (fields.some((name) => document.querySelector(`[name="${name}"]`).type === "number" && !Number.isFinite(next[name]))) {
-          toast("Vérifier les valeurs numériques."); return;
+        const badNumber = fields.find((name) => {
+          const input = document.querySelector(`[name="${name}"]`);
+          return input.type === "number" && (!Number.isFinite(next[name]) || (input.min !== "" && next[name] < Number(input.min)) || (input.max !== "" && next[name] > Number(input.max)));
+        });
+        if (badNumber) { toast(`Valeur hors plage : ${document.querySelector(`label[for="${badNumber}"]`)?.textContent || badNumber}`); return; }
+        const pairsChanged = next.activePairs !== config.activePairs;
+        if (apiConnected) {
+          const response = await fetch("/api/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ config: next }) }).catch(() => null);
+          const result = await response?.json().catch(() => ({}));
+          if (!response?.ok) { toast(result?.error || "Configuration refusée par le serveur."); return; }
         }
         config = { ...defaults, ...next };
-        localStorage.setItem(storageKey, JSON.stringify(config));
-        if (httpApiAvailable) {
-          const response = await fetch("/api/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ config }) }).catch(() => null);
-          if (!response?.ok) toast("Configuration locale conservée; serveur mock injoignable.");
-        }
+        saveConfigLocally();
+        samples = [];
         $("configState").textContent = "Enregistrée";
-        log("Paramètres enregistrés dans le navigateur");
-        toast("Paramètres enregistrés localement; rien n’a été transmis au PLC.");
+        log(`Paramètres enregistrés · ${ACTIVE_LABELS[config.activePairs]}`);
+        toast(apiConnected ? "Paramètres envoyés et enregistrés." : "Paramètres enregistrés dans le navigateur.");
+        if (pairsChanged) { refreshCalibrationState(); render(); }
       });
 
       $("resetSettings").addEventListener("click", () => {
-        config = { ...defaults }; fillForm(); localStorage.removeItem(storageKey);
-        $("configState").textContent = "Valeurs défaut";
-        log("Paramètres locaux remis aux valeurs par défaut"); toast("Valeurs par défaut restaurées.");
+        config = { ...defaults }; fillForm();
+        $("configState").textContent = "Valeurs défaut (non enregistrées)";
+        toast("Valeurs par défaut chargées dans le formulaire. Cliquez sur Enregistrer pour les appliquer.");
       });
 
       $("exportConfig").addEventListener("click", () => {
-        const blob = new Blob([JSON.stringify({ version: 1, scope: "POC paire avant", config }, null, 2)], { type: "application/json" });
+        const blob = new Blob([JSON.stringify({ version: 2, config }, null, 2)], { type: "application/json" });
         downloadBlob(blob, "palpeur-traxx-config.json");
-        log("Configuration locale exportée en JSON");
+        log("Configuration exportée en JSON");
       });
 
       $("importConfig").addEventListener("change", async (event) => {
@@ -705,6 +934,18 @@
         event.target.value = "";
       });
 
+      async function loadServerConfig() {
+        if (!httpApiAvailable) return;
+        try {
+          const response = await fetch("/api/config", { cache: "no-store" });
+          if (!response.ok) return;
+          const server = await response.json();
+          config = { ...config, ...Object.fromEntries(fields.filter((name) => server[name] !== undefined).map((name) => [name, server[name]])) };
+          fillForm();
+          $("configState").textContent = "Lue sur le serveur";
+        } catch { }
+      }
+
       function downloadBlob(blob, filename) {
         const link = document.createElement("a");
         link.href = URL.createObjectURL(blob);
@@ -713,12 +954,13 @@
         setTimeout(() => URL.revokeObjectURL(link.href), 1000);
       }
 
+      // ---------- Pause, enregistrement CSV, OTA ----------
       $("toggleSimulation").addEventListener("click", (event) => {
         running = !running;
         event.currentTarget.innerHTML = running
           ? '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 5h4v14H7zM14 5h4v14h-4z"/></svg>Mettre en pause'
-          : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 5v14l11-7z"/></svg>Reprendre la simulation';
-        log(running ? "Simulation reprise" : "Simulation mise en pause");
+          : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 5v14l11-7z"/></svg>Reprendre';
+        log(running ? "Affichage repris" : "Affichage mis en pause");
       });
 
       $("toggleRecording").addEventListener("click", () => {
@@ -727,35 +969,41 @@
           ? '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Arrêter l’enregistrement'
           : '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="7"/></svg>Démarrer l’enregistrement';
         $("recordingState").textContent = recording ? "En cours" : "Arrêté";
-        $("downloadCsv").disabled = samples.length === 0;
-        log(recording ? "Enregistrement CSV de démonstration démarré" : "Enregistrement arrêté");
+        if (recording) { csvBuffer = []; $("downloadCsv").disabled = true; }
+        log(recording ? "Enregistrement CSV démarré" : "Enregistrement arrêté");
       });
 
+      let csvBuffer = [];
       function logCsvSample(stamp) {
-        const entry = { time: new Date(stamp).toISOString(), offset: current.offset, leftAngle: current.leftAngle, rightAngle: current.rightAngle, leftVoltage: current.leftV, rightVoltage: current.rightV };
-        const csvSamples = JSON.parse(sessionStorage.getItem("palpeur-traxx-csv") || "[]");
-        csvSamples.push(entry);
-        sessionStorage.setItem("palpeur-traxx-csv", JSON.stringify(csvSamples.slice(-3000)));
+        const pose = state.pose || {};
+        const row = {
+          time: new Date(stamp).toISOString(), simulation: state.simulation !== false, pairs: state.active_pairs || config.activePairs,
+          offset: pose.lateral_valid ? pose.lateral_offset_m * 100 : null, reference: pose.lateral_reference || "",
+          heading: pose.heading_valid ? pose.heading_deg : null
+        };
+        SENSOR_IDS.forEach((id) => { const sensor = sensorOf(state, id) || {}; row[`${id}_deg`] = sensor.angle_filtered_deg ?? null; row[`${id}_v`] = sensor.voltage_v ?? null; });
+        csvBuffer.push(row);
+        csvBuffer = csvBuffer.slice(-6000);
         $("downloadCsv").disabled = false;
       }
 
       $("downloadCsv").addEventListener("click", () => {
-        const entries = JSON.parse(sessionStorage.getItem("palpeur-traxx-csv") || "[]");
-        if (!entries.length) { toast("Aucun échantillon enregistré."); return; }
-        const rows = ["horodatage;decalage_demo_cm;angle_gauche_demo_deg;angle_droit_demo_deg;tension_gauche_demo_v;tension_droite_demo_v", ...entries.map((item) => [item.time, item.offset.toFixed(2), item.leftAngle.toFixed(2), item.rightAngle.toFixed(2), item.leftVoltage.toFixed(3), item.rightVoltage.toFixed(3)].join(";"))];
-        downloadBlob(new Blob(["\ufeff" + rows.join("\r\n")], { type: "text/csv;charset=utf-8" }), "palpeur-traxx-demo.csv");
-        log("CSV de démonstration exporté");
+        if (!csvBuffer.length) { toast("Aucun échantillon enregistré."); return; }
+        const cell = (value, digits) => isNum(value) ? value.toFixed(digits) : "";
+        const header = ["horodatage", "simulation", "paires", "decalage_cm", "reference", "cap_deg", ...SENSOR_IDS.flatMap((id) => [`angle_${id}_deg`, `tension_${id}_v`])];
+        const rows = [header.join(";"), ...csvBuffer.map((item) => [
+          item.time, item.simulation ? 1 : 0, item.pairs, cell(item.offset, 2), item.reference, cell(item.heading, 3),
+          ...SENSOR_IDS.flatMap((id) => [cell(item[`${id}_deg`], 2), cell(item[`${id}_v`], 3)])
+        ].join(";"))];
+        downloadBlob(new Blob(["﻿" + rows.join("\r\n")], { type: "text/csv;charset=utf-8" }), "palpeur-traxx-mesures.csv");
+        log("CSV exporté");
       });
 
       $("otaButton").addEventListener("click", async () => {
         const file = $("firmwareFile").files?.[0];
-        if (!file) { toast("Sélectionnez un fichier .bin pour tester le contrôle visuel."); return; }
+        if (!file) { toast("Sélectionnez un fichier .bin."); return; }
         if (!file.name.toLowerCase().endsWith(".bin")) { toast("Le fichier sélectionné n’a pas l’extension .bin."); return; }
-        if (!httpApiAvailable) {
-          toast(`${file.name} sélectionné (${(file.size / 1024).toFixed(0)} Ko). Aucun envoi en mode maquette.`);
-          log(`Fichier OTA sélectionné en démo : ${file.name}`);
-          return;
-        }
+        if (!apiConnected) { toast(`${file.name} sélectionné (${(file.size / 1024).toFixed(0)} Ko). Aucun PLC connecté.`); return; }
         if (!confirm(`Envoyer ${file.name} au PLC et redémarrer le firmware ?`)) return;
         const formData = new FormData();
         formData.append("firmware", file, file.name);
@@ -777,19 +1025,19 @@
         $("uptimeValue").textContent = hours ? `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}` : `${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`;
       }
 
+      // ---------- Démarrage ----------
       fillForm();
-      renderCalibration();
-      logEntries = ["Maquette locale démarrée · aucun PLC connecté"];
-      $("logList").innerHTML = logEntries.map(escapeHtml).map((entry) => `<div>${entry}</div>`).join("");
-      updateViews();
-      updateSimulation();
+      log(httpApiAvailable ? "Page démarrée · recherche du serveur" : "Page locale démarrée · simulateur intégré");
+      ingest(localState());
+      loadServerConfig();
       setInterval(() => {
-        if (httpApiAvailable) pollMockState();
-        else if (running) updateSimulation();
+        if (!running) { updateUptime(); return; }
+        if (httpApiAvailable) pollApiState();
+        else ingest(localState());
         updateUptime();
       }, 50);
       setInterval(() => {
-        if (httpApiAvailable && !$("view-calibration").hidden) refreshCalibrationState();
+        if (apiConnected && !$("view-calibration").hidden) refreshCalibrationState();
       }, 1000);
       window.addEventListener("resize", drawCanvases);
       document.addEventListener("visibilitychange", () => { if (!document.hidden) drawCanvases(); });

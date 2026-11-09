@@ -4,7 +4,9 @@ Ce document fixe les conventions de signe et les équations de référence. Les 
 
 ## Périmètre du POC
 
-Le POC mesure le décalage avec la paire avant uniquement. Il ne calcule pas le cap. Les équations à deux paires ci-dessous documentent une évolution possible; elles ne sont pas requises pour la première version. L'ESP32 PLC 19R est le candidat probable pour cette évolution, sous réserve de confirmer qu'une variante adaptée prend en charge les quatre capteurs.
+Le POC démarre avec la paire avant uniquement, sans cap. Le logiciel implémente aussi le cas à deux paires ci-dessous, activable par le paramètre `activePairs`. Côté matériel, l'ESP32 PLC 19R est le candidat probable, sous réserve de confirmer qu'une variante adaptée prend en charge les quatre capteurs.
+
+Le biais de centrage (calibration « centre ») est enregistré **par paire** et retranché à `y_row,p` avant le calcul de la pose. Avec deux paires, la capture se fait machine centrée **et alignée** dans un rang de référence : elle remet donc aussi le cap à zéro.
 
 ## Repère machine
 

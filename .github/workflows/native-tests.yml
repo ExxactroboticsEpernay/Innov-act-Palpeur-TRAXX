@@ -15,3 +15,35 @@ jobs:
         run: cmake --build build --parallel
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check page script syntax
+        run: |
+          python3 - <<'EOF'
+          import pathlib, re
+          html = pathlib.Path("data/index.html").read_text(encoding="utf-8")
+          scripts = re.findall(r"<script>(.*?)</script>", html, re.S)
+          pathlib.Path("page.js").write_text("\n".join(scripts), encoding="utf-8")
+          EOF
+          node --check page.js
+      - name: Mock server smoke test
+        run: python3 test/mock/test_mock_server.py
+
+  # Compilation du firmware en mode simulation sur une carte ESP32 générique.
+  # Ne remplace pas le build sur la cible Industrial Shields (FQBN à confirmer).
+  firmware-sim:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install ESP32 core and libraries
+        run: |
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32@2.0.17
+          arduino-cli lib install ArduinoJson@6.21.5
+      - name: Compile (simulation)
+        shell: pwsh
+        run: ./tools/build_arduino.ps1 -Fqbn esp32:esp32:esp32

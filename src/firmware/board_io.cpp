@@ -1,5 +1,7 @@
 #include "board_io.h"
 
+#include <cmath>
+
 #if !PALPEUR_SIMULATION
 #if !__has_include("board_19r_map.h")
 #error "Add board_19r_map.h from the verified Industrial Shields 19R input map before enabling real acquisition."
@@ -16,19 +18,14 @@ void beginBoardInputs() {
 #endif
 }
 
-float readLeftSensorVoltage() {
+float readSensorVoltage(int channel) {
+  if (channel < 0 || channel >= kSensorChannelCount) return NAN;
 #if PALPEUR_SIMULATION
-  return 2.5f;
+  return NAN;  // en simulation, les tensions sont générées par application.cpp
 #else
-  return palpeur19rReadLeftVoltage();
-#endif
-}
-
-float readRightSensorVoltage() {
-#if PALPEUR_SIMULATION
-  return 2.5f;
-#else
-  return palpeur19rReadRightVoltage();
+  // Doit renvoyer NAN pour une voie non câblée : elle apparaît alors en
+  // défaut capteur au lieu de produire une fausse mesure.
+  return palpeur19rReadVoltage(channel);
 #endif
 }
 

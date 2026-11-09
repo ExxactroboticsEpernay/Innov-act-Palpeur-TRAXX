@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Serveur local de démonstration pour l'IHM du Palpeur TRAXX."""
+"""Serveur local de démonstration pour l'IHM du Palpeur TRAXX.
+
+Le JSON produit suit le même format que le firmware (`/api/state`,
+`/api/config`, `/api/calibration`), avec une ou deux paires de palpeurs.
+"""
 
 from __future__ import annotations
 
@@ -14,12 +18,18 @@ from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_ROOT = ROOT / "data"
+PAIRS = ("front", "rear")
+SENSORS = ("front_left", "front_right", "rear_left", "rear_right")
 DEFAULT_CONFIG = {
+    "activePairs": "front",
+    "wheelbase": 3.85,
     "pivotSpacing": 0.525,
     "armLength": 0.35,
     "contactLength": 0.35,
-    "armDirection": "forward",
     "frontOffset": 0.4,
+    "rearOffset": -0.4,
+    "frontArmDirection": "forward",
+    "rearArmDirection": "forward",
     "trackWidth": 1.16,
     "estimator": "v1",
     "contactThreshold": 3.0,
@@ -28,77 +38,190 @@ DEFAULT_CONFIG = {
     "publishRate": 50,
 }
 CONFIG_RANGES = {
+    "wheelbase": (2.0, 6.0),
     "pivotSpacing": (0.3, 1.2),
     "armLength": (0.1, 1.2),
     "contactLength": (0.1, 1.2),
     "frontOffset": (-1.5, 1.5),
+    "rearOffset": (-1.5, 1.5),
     "trackWidth": (0.5, 3.0),
     "contactThreshold": (1.0, 30.0),
     "hysteresis": (0.0, 10.0),
     "medianWindow": (3, 21),
     "publishRate": (5, 200),
 }
+CHOICES = {
+    "activePairs": ("front", "rear", "both"),
+    "frontArmDirection": ("forward", "backward"),
+    "rearArmDirection": ("forward", "backward"),
+    "estimator": ("v1", "v2"),
+}
+OBJECT_RADIUS_M = 0.05
+
+
+def new_calibration() -> dict:
+    return {
+        "sensors": {name: {"neutral": False, "endpoints": False} for name in SENSORS},
+        "center": {"front": False, "rear": False},
+    }
+
+
 STATE = {
     "started_at": time.monotonic(),
     "sequence": 0,
     "config": dict(DEFAULT_CONFIG),
-    "calibration": {
-        "neutral_left": False,
-        "neutral_right": False,
-        "endpoints": False,
-        "center": False,
-    },
+    "calibration": new_calibration(),
 }
 
 
+def pair_enabled(pair: str) -> bool:
+    active = STATE["config"]["activePairs"]
+    return active == "both" or active == pair
+
+
+def pair_x(pair: str) -> float:
+    config = STATE["config"]
+    if pair == "front":
+        return config["wheelbase"] + config["frontOffset"]
+    return config["rearOffset"]
+
+
+def nominal_voltage(angle_deg: float) -> float:
+    return 0.5 + (angle_deg + 90.0) * 4.0 / 180.0
+
+
+def simulated_pair(pair: str, row_y_m: float, elapsed: float) -> dict:
+    """Angles des bras touchant un objet rond centré en row_y_m (modèle v1)."""
+    config = STATE["config"]
+    disabled_sensor = {
+        "voltage_v": None, "angle_raw_deg": None, "angle_filtered_deg": None,
+        "contact": False, "fault": False,
+    }
+    if not pair_enabled(pair):
+        return {
+            "enabled": False, "valid": False, "reason": "pair_disabled",
+            "x_m": round(pair_x(pair), 3), "row_y_m": None, "apparent_width_m": None,
+            "left": dict(disabled_sensor), "right": dict(disabled_sensor),
+        }
+
+    half = config["pivotSpacing"] / 2.0
+    reach = config["contactLength"]
+    # Contact gauche au-dessus de l'objet, contact droit en dessous.
+    sin_left = max(-1.0, min(1.0, (half - (row_y_m + OBJECT_RADIUS_M)) / reach))
+    sin_right = max(-1.0, min(1.0, (half + (row_y_m - OBJECT_RADIUS_M)) / reach))
+    jitter = 0.15 * math.sin(elapsed * 2.3 + (0.0 if pair == "front" else 1.7))
+    angles = {
+        "left": math.degrees(math.asin(sin_left)) + jitter,
+        "right": math.degrees(math.asin(sin_right)) - jitter,
+    }
+    sides = {}
+    for side, angle in angles.items():
+        sides[side] = {
+            "voltage_v": round(nominal_voltage(angle), 3),
+            "angle_raw_deg": round(angle, 2),
+            "angle_filtered_deg": round(angle - jitter * 0.8, 2),
+            "contact": True,
+            "fault": False,
+        }
+    return {
+        "enabled": True, "valid": True, "reason": "none",
+        "x_m": round(pair_x(pair), 3), "row_y_m": round(row_y_m, 5),
+        "apparent_width_m": round(2 * OBJECT_RADIUS_M, 4),
+        "left": sides["left"], "right": sides["right"],
+    }
+
+
 def simulated_state() -> dict:
+    config = STATE["config"]
     elapsed = time.monotonic() - STATE["started_at"]
     sequence = STATE["sequence"]
     STATE["sequence"] = (sequence + 1) & 0xFFFFFFFF
 
-    left_angle = 23.8 + 1.8 * math.sin(elapsed * 0.55)
-    right_angle = -23.5 - 1.5 * math.sin(elapsed * 0.49)
-    left_voltage = 2.94 + 0.04 * math.sin(elapsed * 0.8)
-    right_voltage = 2.06 + 0.035 * math.sin(elapsed * 0.72)
-    offset_m = (3.1 * math.sin(elapsed * 0.32) +
-                1.2 * math.sin(elapsed * 0.11)) / 100.0
+    # Rang droit, machine qui serpente : décalage ±4 cm, lacet ±0,7°.
+    front_x, rear_x = pair_x("front"), pair_x("rear")
+    middle_x = (front_x + rear_x) / 2.0
+    row_y_middle = 0.031 * math.sin(elapsed * 0.32) + 0.012 * math.sin(elapsed * 0.11)
+    row_slope = math.tan(0.012 * math.sin(elapsed * 0.18))
+    pairs = {
+        pair: simulated_pair(pair, row_y_middle + row_slope * (pair_x(pair) - middle_x), elapsed)
+        for pair in PAIRS
+    }
+
+    pose = {
+        "lateral_valid": False, "heading_valid": False, "estimated": False,
+        "reason": "none", "lateral_offset_m": None, "lateral_reference": None,
+        "lateral_reference_x_m": None, "heading_deg": None, "offsets": None,
+    }
+    front, rear = pairs["front"], pairs["rear"]
+    if front["valid"] and rear["valid"]:
+        separation = front_x - rear_x
+
+        def offset_at(x_ref: float) -> float:
+            row_y = rear["row_y_m"] + (front["row_y_m"] - rear["row_y_m"]) * (x_ref - rear_x) / separation
+            return round(-row_y, 5)
+
+        wheelbase = config["wheelbase"]
+        pose.update({
+            "lateral_valid": True, "heading_valid": True,
+            "lateral_offset_m": offset_at(wheelbase / 2.0),
+            "lateral_reference": "wheelbase_center",
+            "lateral_reference_x_m": wheelbase / 2.0,
+            "heading_deg": round(-math.degrees(math.atan2(front["row_y_m"] - rear["row_y_m"], separation)), 3),
+            "offsets": {
+                "rear_axle_m": offset_at(0.0),
+                "wheelbase_center_m": offset_at(wheelbase / 2.0),
+                "front_axle_m": offset_at(wheelbase),
+            },
+        })
+    else:
+        valid_pair = "front" if front["valid"] else "rear" if rear["valid"] else None
+        if valid_pair:
+            pose.update({
+                "lateral_valid": True,
+                "lateral_offset_m": round(-pairs[valid_pair]["row_y_m"], 5),
+                "lateral_reference": f"{valid_pair}_pair",
+                "lateral_reference_x_m": pairs[valid_pair]["x_m"],
+            })
 
     return {
         "timestamp_ms": int(elapsed * 1000),
         "sequence": sequence,
         "simulation": True,
-        "front_pair": {
-            "enabled": True,
-            "valid": True,
-            "reason": "none",
-            "left": {
-                "voltage_v": round(left_voltage, 3),
-                "angle_raw_deg": round(left_angle, 2),
-                "angle_filtered_deg": round(left_angle - 0.2, 2),
-                "contact": True,
-                "fault": False,
-            },
-            "right": {
-                "voltage_v": round(right_voltage, 3),
-                "angle_raw_deg": round(right_angle, 2),
-                "angle_filtered_deg": round(right_angle + 0.3, 2),
-                "contact": True,
-                "fault": False,
-            },
-        },
-        "pose": {
-            "lateral_offset_m": round(offset_m, 5),
-            "lateral_valid": True,
-            "heading_deg": None,
-            "heading_valid": False,
-            "estimated": False,
-        },
+        "active_pairs": config["activePairs"],
+        "front_pair": front,
+        "rear_pair": rear,
+        "pose": pose,
         "can": {"enabled": False, "state": "disabled"},
     }
 
 
+def calibration_state() -> dict:
+    calibration = STATE["calibration"]
+    sensors = {}
+    for name in SENSORS:
+        item = calibration["sensors"][name]
+        enabled = pair_enabled(name.split("_")[0])
+        sensors[name] = {
+            "enabled": enabled,
+            "neutral": item["neutral"],
+            "neutral_v": 2.5,
+            "endpoints": item["endpoints"],
+            "min_v": 0.5,
+            "max_v": 4.5,
+            "calibrated": item["neutral"] and item["endpoints"],
+        }
+    complete = all(item["calibrated"] for item in sensors.values() if item["enabled"])
+    return {
+        "sensors": sensors,
+        "center": dict(calibration["center"]),
+        "capturing_endpoints": False,
+        "capture_remaining_ms": 0,
+        "calibrated": complete,
+    }
+
+
 class MockHandler(BaseHTTPRequestHandler):
-    server_version = "PalpeurTRAXXMock/0.1"
+    server_version = "PalpeurTRAXXMock/0.2"
 
     def log_message(self, format_string: str, *args: object) -> None:
         print(f"{self.log_date_time_string()} {format_string % args}")
@@ -108,22 +231,13 @@ class MockHandler(BaseHTTPRequestHandler):
         if path in ("/", "/index.html"):
             self._send_file(DATA_ROOT / "index.html", "text/html; charset=utf-8")
         elif path == "/api/health":
-            self._send_json({"ok": True, "simulation": True, "version": "mock-0.1"})
+            self._send_json({"ok": True, "simulation": True, "version": "mock-0.2"})
         elif path == "/api/state":
             self._send_json(simulated_state())
         elif path == "/api/config":
             self._send_json(STATE["config"])
         elif path == "/api/calibration":
-            calibration = dict(STATE["calibration"])
-            calibration["capturing_endpoints"] = False
-            calibration["capture_remaining_ms"] = 0
-            calibration["calibrated"] = all(
-                STATE["calibration"][name]
-                for name in ("neutral_left", "neutral_right", "endpoints")
-            )
-            calibration["left_neutral_v"] = 2.5
-            calibration["right_neutral_v"] = 2.5
-            self._send_json(calibration)
+            self._send_json(calibration_state())
         else:
             self.send_error(404, "Route inconnue")
 
@@ -140,19 +254,13 @@ class MockHandler(BaseHTTPRequestHandler):
             if error:
                 self._send_json({"ok": False, "error": error}, status=400)
                 return
-            STATE["config"].update(config)
+            STATE["config"].update({key: config[key] for key in config if key in DEFAULT_CONFIG})
             self._send_json({"ok": True, "config": STATE["config"]})
         elif path == "/api/calibration/capture":
-            name = payload.get("name")
-            if name not in STATE["calibration"]:
-                self._send_json({"ok": False, "error": "Étape inconnue"}, status=400)
-                return
-            STATE["calibration"][name] = True
-            self._send_json({"ok": True, "calibration": STATE["calibration"]})
+            self._capture(str(payload.get("name", "")))
         elif path == "/api/calibration/reset":
-            for name in STATE["calibration"]:
-                STATE["calibration"][name] = False
-            self._send_json({"ok": True, "calibration": STATE["calibration"]})
+            STATE["calibration"] = new_calibration()
+            self._send_json({"ok": True})
         elif path == "/api/ota":
             self._send_json(
                 {"ok": False, "error": "OTA indisponible sur le serveur simulé"},
@@ -160,6 +268,27 @@ class MockHandler(BaseHTTPRequestHandler):
             )
         else:
             self.send_error(404, "Route inconnue")
+
+    def _capture(self, name: str) -> None:
+        calibration = STATE["calibration"]
+        if name.startswith("neutral_") and name[len("neutral_"):] in SENSORS:
+            sensor = name[len("neutral_"):]
+            if not pair_enabled(sensor.split("_")[0]):
+                self._send_json({"ok": False, "error": "Capteur d'une paire désactivée"}, status=409)
+                return
+            calibration["sensors"][sensor]["neutral"] = True
+        elif name == "endpoints":
+            for sensor in SENSORS:
+                if pair_enabled(sensor.split("_")[0]):
+                    calibration["sensors"][sensor]["endpoints"] = True
+        elif name == "center":
+            for pair in PAIRS:
+                if pair_enabled(pair):
+                    calibration["center"][pair] = True
+        else:
+            self._send_json({"ok": False, "error": "Étape inconnue"}, status=400)
+            return
+        self._send_json({"ok": True})
 
     def _read_json(self) -> dict | None:
         try:
@@ -184,10 +313,8 @@ class MockHandler(BaseHTTPRequestHandler):
                 minimum, maximum = CONFIG_RANGES[name]
                 if not minimum <= numeric <= maximum:
                     return f"{name} doit être entre {minimum} et {maximum}"
-            elif name == "armDirection" and value not in ("forward", "backward"):
-                return "armDirection invalide"
-            elif name == "estimator" and value not in ("v1", "v2"):
-                return "estimator invalide"
+            elif name in CHOICES and value not in CHOICES[name]:
+                return f"{name} invalide"
         return None
 
     def _send_json(self, payload: object, status: int = 200) -> None:

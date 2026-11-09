@@ -10,11 +10,11 @@ Ce fichier, à créer après consultation de la documentation officielle corresp
 
 ```cpp
 void palpeur19rBegin();
-float palpeur19rReadLeftVoltage();
-float palpeur19rReadRightVoltage();
+// channel : 0 avant gauche, 1 avant droit, 2 arrière gauche, 3 arrière droit.
+float palpeur19rReadVoltage(int channel);
 ```
 
-Les fonctions de lecture retournent des volts côté entrée analogique après conversion effectuée par l'API officielle Industrial Shields. Ne pas copier les GPIO ou macros du PLC 14 du joystick sans preuve qu'ils sont identiques au 19R.
+La fonction de lecture retourne des volts côté entrée analogique après conversion effectuée par l'API officielle Industrial Shields. Elle doit retourner `NAN` pour une voie non câblée ou indisponible : la voie apparaît alors en défaut capteur, jamais comme une mesure. Le firmware ne lit que les voies des paires actives (paramètre `activePairs`). Ne pas copier les GPIO ou macros du PLC 14 du joystick sans preuve qu'ils sont identiques au 19R.
 
 ## Vérifications avant le mapping
 

@@ -1,10 +1,10 @@
 #include "application.h"
 
 #include "board_io.h"
-#include "core/calibration.h"
-#include "core/geometry.h"
-#include "core/sensor_pipeline.h"
-#include "sim/geometry_simulation.h"
+#include "../core/calibration.h"
+#include "../core/geometry.h"
+#include "../core/sensor_pipeline.h"
+#include "../sim/geometry_simulation.h"
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
@@ -18,6 +18,7 @@
 
 #include <cmath>
 #include <array>
+#include <cstdio>
 #include <cstring>
 
 #ifndef PALPEUR_WIFI_SSID
@@ -35,29 +36,59 @@ namespace palpeur {
 namespace firmware {
 namespace {
 
+// Paires : 0 = avant, 1 = arrière. Capteurs : paire * 2 + côté (0 gauche, 1 droit),
+// soit le même ordre que board_io.h.
+constexpr int kPairCount = 2;
+constexpr int kFront = 0;
+constexpr int kRear = 1;
+constexpr int kLeft = 0;
+constexpr int kRight = 1;
+const char* const kSensorNames[kSensorChannelCount] = {
+    "front_left", "front_right", "rear_left", "rear_right"};
+// Préfixes NVS courts : les clés Preferences sont limitées à 15 caractères.
+const char* const kSensorKeys[kSensorChannelCount] = {"fl", "fr", "rl", "rr"};
+
+int sensorOf(int pair, int side) { return pair * 2 + side; }
+
 struct AppConfig {
   float wheelbase_m = 3.85f;
   float pivot_spacing_m = 0.525f;
   float arm_length_m = 0.35f;
   float contact_length_m = 0.35f;
-  float front_pair_offset_m = 0.40f;
+  // Décalage signé du pivot par rapport à l'essieu correspondant.
+  float pair_offset_m[kPairCount] = {0.40f, -0.40f};
+  int arm_direction[kPairCount] = {1, 1};
+  bool pair_enabled[kPairCount] = {true, false};
+  // Biais de centrage par paire, retranché à y_row (calibration « centre »).
+  float center_bias_m[kPairCount] = {0.0f, 0.0f};
   float track_width_m = 1.16f;
-  float center_bias_m = 0.0f;
   float contact_threshold_deg = 3.0f;
   float contact_hysteresis_deg = 1.0f;
   float smoothing_alpha = 0.25f;
   float maximum_slew_deg_per_second = 60.0f;
   float object_diameter_m = 0.10f;
-  int arm_direction = 1;
   int median_window = 5;
   int publish_rate_hz = 50;
   int estimator = 1;
 };
 
+constexpr std::size_t kCalibrationWindowSize = 100;
+
+struct SensorState {
+  SensorCalibration calibration;
+  bool neutral_captured = false;
+  bool endpoints_captured = false;
+  float capture_min_v = 4.7f;
+  float capture_max_v = 0.3f;
+  std::array<float, kCalibrationWindowSize> history{};
+  SensorChannel* channel = nullptr;
+  SensorChannelReading reading;
+};
+
 struct RuntimeState {
-  SensorChannelReading left;
-  SensorChannelReading right;
-  PairEstimate pair;
+  PairEstimate pairs[kPairCount];
+  float raw_row_y_m[kPairCount] = {0.0f, 0.0f};  // avant correction du biais
+  RowPose pose;
   std::uint32_t sequence = 0;
   bool simulated = PALPEUR_SIMULATION != 0;
 };
@@ -66,28 +97,72 @@ WebServer web_server(80);
 Preferences preferences;
 AppConfig app_config;
 RuntimeState runtime_state;
-SensorCalibration left_calibration;
-SensorCalibration right_calibration;
-SensorChannel* left_channel = nullptr;
-SensorChannel* right_channel = nullptr;
+SensorState sensors[kSensorChannelCount];
+bool center_captured[kPairCount] = {false, false};
 std::uint32_t last_sample_ms = 0;
 std::uint32_t ota_restart_at_ms = 0;
 float simulation_phase = 0.0f;
-constexpr std::size_t kCalibrationWindowSize = 100;
-std::array<float, kCalibrationWindowSize> left_voltage_history{};
-std::array<float, kCalibrationWindowSize> right_voltage_history{};
 std::size_t voltage_history_next = 0;
 std::size_t voltage_history_count = 0;
-bool left_neutral_captured = false;
-bool right_neutral_captured = false;
-bool endpoints_captured = false;
-bool center_captured = false;
 bool endpoint_capture_active = false;
 std::uint32_t endpoint_capture_started_ms = 0;
-float capture_left_min_v = 4.7f;
-float capture_left_max_v = 0.3f;
-float capture_right_min_v = 4.7f;
-float capture_right_max_v = 0.3f;
+
+const char* sensorKey(int sensor, const char* suffix) {
+  static char key[16];
+  std::snprintf(key, sizeof(key), "%s_%s", kSensorKeys[sensor], suffix);
+  return key;
+}
+
+bool sensorEnabled(int sensor) { return app_config.pair_enabled[sensor / 2]; }
+
+const char* activePairsName() {
+  if (app_config.pair_enabled[kFront] && app_config.pair_enabled[kRear]) return "both";
+  return app_config.pair_enabled[kRear] ? "rear" : "front";
+}
+
+const char* reasonName(InvalidReason reason) {
+  switch (reason) {
+    case InvalidReason::None: return "none";
+    case InvalidReason::LeftFree: return "left_free";
+    case InvalidReason::RightFree: return "right_free";
+    case InvalidReason::BothFree: return "both_free";
+    case InvalidReason::LeftSensorFault: return "left_sensor_fault";
+    case InvalidReason::RightSensorFault: return "right_sensor_fault";
+    case InvalidReason::BothSensorFault: return "both_sensor_fault";
+    case InvalidReason::CalibrationInvalid: return "calibration_invalid";
+    case InvalidReason::GeometryInvalid: return "geometry_invalid";
+    case InvalidReason::PairDisabled: return "pair_disabled";
+  }
+  return "unknown";
+}
+
+// ArduinoJson écrirait NaN tel quel (JSON invalide) : on publie null à la place.
+void setNumber(JsonObject object, const char* key, float value) {
+  if (std::isfinite(value)) {
+    object[key] = value;
+  } else {
+    object[key] = nullptr;
+  }
+}
+
+PairConfig pairConfig(int pair) {
+  PairConfig config;
+  config.x_m = pair == kFront
+      ? app_config.wheelbase_m + app_config.pair_offset_m[kFront]
+      : app_config.pair_offset_m[kRear];
+  config.pivot_spacing_m = app_config.pivot_spacing_m;
+  config.contact_length_m = app_config.contact_length_m;
+  config.arm_direction = app_config.arm_direction[pair];
+  return config;
+}
+
+VehicleGeometry vehicleGeometry() {
+  VehicleGeometry geometry;
+  geometry.wheelbase_m = app_config.wheelbase_m;
+  geometry.front_pair_offset_m = app_config.pair_offset_m[kFront];
+  geometry.rear_pair_offset_m = app_config.pair_offset_m[kRear];
+  return geometry;
+}
 
 SensorChannelConfig channelConfig(const SensorCalibration& calibration) {
   SensorChannelConfig config;
@@ -101,10 +176,11 @@ SensorChannelConfig channelConfig(const SensorCalibration& calibration) {
 }
 
 void recreateChannels() {
-  delete left_channel;
-  delete right_channel;
-  left_channel = new SensorChannel(channelConfig(left_calibration));
-  right_channel = new SensorChannel(channelConfig(right_calibration));
+  for (SensorState& sensor : sensors) {
+    delete sensor.channel;
+    sensor.channel = new SensorChannel(channelConfig(sensor.calibration));
+    sensor.reading = SensorChannelReading{};
+  }
 }
 
 void loadConfig() {
@@ -112,39 +188,43 @@ void loadConfig() {
   app_config.pivot_spacing_m = preferences.getFloat("spacing", 0.525f);
   app_config.arm_length_m = preferences.getFloat("arm_len", 0.35f);
   app_config.contact_length_m = preferences.getFloat("contact", 0.35f);
-  app_config.front_pair_offset_m = preferences.getFloat("front_off", 0.40f);
+  app_config.pair_offset_m[kFront] = preferences.getFloat("front_off", 0.40f);
+  app_config.pair_offset_m[kRear] = preferences.getFloat("rear_off", -0.40f);
+  app_config.arm_direction[kFront] = preferences.getInt("arm_dir", 1);
+  app_config.arm_direction[kRear] = preferences.getInt("arm_dir_r", 1);
+  app_config.pair_enabled[kFront] = preferences.getBool("front_en", true);
+  app_config.pair_enabled[kRear] = preferences.getBool("rear_en", false);
+  if (!app_config.pair_enabled[kFront] && !app_config.pair_enabled[kRear]) {
+    app_config.pair_enabled[kFront] = true;  // au moins une paire active
+  }
+  app_config.center_bias_m[kFront] = preferences.getFloat("center", 0.0f);
+  app_config.center_bias_m[kRear] = preferences.getFloat("center_r", 0.0f);
   app_config.track_width_m = preferences.getFloat("track", 1.16f);
-  app_config.center_bias_m = preferences.getFloat("center", 0.0f);
   app_config.contact_threshold_deg = preferences.getFloat("threshold", 3.0f);
   app_config.contact_hysteresis_deg = preferences.getFloat("hyst", 1.0f);
   app_config.smoothing_alpha = preferences.getFloat("smooth", 0.25f);
   app_config.maximum_slew_deg_per_second = preferences.getFloat("slew", 60.0f);
   app_config.object_diameter_m = preferences.getFloat("diameter", 0.10f);
-  app_config.arm_direction = preferences.getInt("arm_dir", 1);
   app_config.median_window = preferences.getInt("median", 5);
   app_config.publish_rate_hz = preferences.getInt("rate", 50);
   app_config.estimator = preferences.getInt("estimator", 1);
+  center_captured[kFront] = preferences.getBool("center_set", false);
+  center_captured[kRear] = preferences.getBool("center_set_r", false);
 
-  left_calibration.voltage_min_v = preferences.getFloat("l_min", 0.5f);
-  left_calibration.voltage_neutral_v = preferences.getFloat("l_neutral", 2.5f);
-  left_calibration.voltage_max_v = preferences.getFloat("l_max", 4.5f);
-  left_calibration.invert = preferences.getBool("l_invert", false);
-  left_neutral_captured = preferences.getBool("ln_set", false);
-  right_calibration.voltage_min_v = preferences.getFloat("r_min", 0.5f);
-  right_calibration.voltage_neutral_v = preferences.getFloat("r_neutral", 2.5f);
-  right_calibration.voltage_max_v = preferences.getFloat("r_max", 4.5f);
-  right_calibration.invert = preferences.getBool("r_invert", false);
-  right_neutral_captured = preferences.getBool("rn_set", false);
-  endpoints_captured = preferences.getBool("endpoints", false);
-  center_captured = preferences.getBool("center_set", false);
-
+  for (int index = 0; index < kSensorChannelCount; ++index) {
+    SensorState& sensor = sensors[index];
+    sensor.calibration.voltage_min_v = preferences.getFloat(sensorKey(index, "min"), 0.5f);
+    sensor.calibration.voltage_neutral_v = preferences.getFloat(sensorKey(index, "neu"), 2.5f);
+    sensor.calibration.voltage_max_v = preferences.getFloat(sensorKey(index, "max"), 4.5f);
+    sensor.calibration.invert = preferences.getBool(sensorKey(index, "inv"), false);
+    sensor.neutral_captured = preferences.getBool(sensorKey(index, "nset"), false);
+    sensor.endpoints_captured = preferences.getBool(sensorKey(index, "eset"), false);
 #if PALPEUR_SIMULATION
-  left_calibration.calibrated = true;
-  right_calibration.calibrated = true;
+    sensor.calibration.calibrated = true;
 #else
-  left_calibration.calibrated = preferences.getBool("l_valid", false);
-  right_calibration.calibrated = preferences.getBool("r_valid", false);
+    sensor.calibration.calibrated = preferences.getBool(sensorKey(index, "ok"), false);
 #endif
+  }
 }
 
 bool validNumber(JsonVariantConst value, float minimum, float maximum,
@@ -154,66 +234,80 @@ bool validNumber(JsonVariantConst value, float minimum, float maximum,
   return std::isfinite(output) && output >= minimum && output <= maximum;
 }
 
-bool updateCalibrationValidity() {
-  SensorCalibration left_check = left_calibration;
-  SensorCalibration right_check = right_calibration;
-  left_check.calibrated = true;
-  right_check.calibrated = true;
-  left_calibration.calibrated = left_neutral_captured && endpoints_captured &&
-                                isCalibrationValid(left_check);
-  right_calibration.calibrated = right_neutral_captured && endpoints_captured &&
-                                 isCalibrationValid(right_check);
-  preferences.putBool("l_valid", left_calibration.calibrated);
-  preferences.putBool("r_valid", right_calibration.calibrated);
-  recreateChannels();
-  return left_calibration.calibrated && right_calibration.calibrated;
+void persistCalibration() {
+  for (int index = 0; index < kSensorChannelCount; ++index) {
+    const SensorState& sensor = sensors[index];
+    preferences.putFloat(sensorKey(index, "min"), sensor.calibration.voltage_min_v);
+    preferences.putFloat(sensorKey(index, "neu"), sensor.calibration.voltage_neutral_v);
+    preferences.putFloat(sensorKey(index, "max"), sensor.calibration.voltage_max_v);
+    preferences.putBool(sensorKey(index, "nset"), sensor.neutral_captured);
+    preferences.putBool(sensorKey(index, "eset"), sensor.endpoints_captured);
+  }
+  preferences.putBool("center_set", center_captured[kFront]);
+  preferences.putBool("center_set_r", center_captured[kRear]);
 }
 
-void persistCalibration() {
-  preferences.putFloat("l_min", left_calibration.voltage_min_v);
-  preferences.putFloat("l_neutral", left_calibration.voltage_neutral_v);
-  preferences.putFloat("l_max", left_calibration.voltage_max_v);
-  preferences.putFloat("r_min", right_calibration.voltage_min_v);
-  preferences.putFloat("r_neutral", right_calibration.voltage_neutral_v);
-  preferences.putFloat("r_max", right_calibration.voltage_max_v);
-  preferences.putBool("ln_set", left_neutral_captured);
-  preferences.putBool("rn_set", right_neutral_captured);
-  preferences.putBool("endpoints", endpoints_captured);
-  preferences.putBool("center_set", center_captured);
+void updateCalibrationValidity() {
+  for (int index = 0; index < kSensorChannelCount; ++index) {
+    SensorState& sensor = sensors[index];
+#if PALPEUR_SIMULATION
+    sensor.calibration.calibrated = true;
+#else
+    SensorCalibration check = sensor.calibration;
+    check.calibrated = true;
+    sensor.calibration.calibrated = sensor.neutral_captured &&
+                                    sensor.endpoints_captured &&
+                                    isCalibrationValid(check);
+    preferences.putBool(sensorKey(index, "ok"), sensor.calibration.calibrated);
+#endif
+  }
+  recreateChannels();
+}
+
+// Calibration complète = tous les capteurs des paires actives calibrés.
+bool calibrationComplete() {
+  for (int index = 0; index < kSensorChannelCount; ++index) {
+    if (!sensorEnabled(index)) continue;
+    const SensorState& sensor = sensors[index];
+    if (!sensor.neutral_captured || !sensor.endpoints_captured ||
+        !sensor.calibration.calibrated) {
+      return false;
+    }
+  }
+  return true;
 }
 
 void finishEndpointCapture() {
   endpoint_capture_active = false;
-  const bool left_span_valid = capture_left_max_v - capture_left_min_v >= 2.0f;
-  const bool right_span_valid = capture_right_max_v - capture_right_min_v >= 2.0f;
-  endpoints_captured = left_span_valid && right_span_valid;
-  if (endpoints_captured) {
-    left_calibration.voltage_min_v = capture_left_min_v;
-    left_calibration.voltage_max_v = capture_left_max_v;
-    right_calibration.voltage_min_v = capture_right_min_v;
-    right_calibration.voltage_max_v = capture_right_max_v;
+  for (int index = 0; index < kSensorChannelCount; ++index) {
+    if (!sensorEnabled(index)) continue;  // paire inactive : calibration conservée
+    SensorState& sensor = sensors[index];
+    sensor.endpoints_captured = sensor.capture_max_v - sensor.capture_min_v >= 2.0f;
+    if (sensor.endpoints_captured) {
+      sensor.calibration.voltage_min_v = sensor.capture_min_v;
+      sensor.calibration.voltage_max_v = sensor.capture_max_v;
+    }
   }
   updateCalibrationValidity();
   persistCalibration();
 }
 
-void recordCalibrationSample(float left_voltage_v, float right_voltage_v,
+void recordCalibrationSample(const float (&voltages)[kSensorChannelCount],
                              std::uint32_t now) {
-  left_voltage_history[voltage_history_next] = left_voltage_v;
-  right_voltage_history[voltage_history_next] = right_voltage_v;
+  for (int index = 0; index < kSensorChannelCount; ++index) {
+    SensorState& sensor = sensors[index];
+    const float voltage = voltages[index];
+    sensor.history[voltage_history_next] = voltage;
+    if (endpoint_capture_active && voltage >= 0.3f && voltage <= 4.7f) {
+      sensor.capture_min_v = std::min(sensor.capture_min_v, voltage);
+      sensor.capture_max_v = std::max(sensor.capture_max_v, voltage);
+    }
+  }
   voltage_history_next = (voltage_history_next + 1) % kCalibrationWindowSize;
   if (voltage_history_count < kCalibrationWindowSize) ++voltage_history_count;
-
-  if (!endpoint_capture_active) return;
-  if (left_voltage_v >= 0.3f && left_voltage_v <= 4.7f) {
-    capture_left_min_v = std::min(capture_left_min_v, left_voltage_v);
-    capture_left_max_v = std::max(capture_left_max_v, left_voltage_v);
+  if (endpoint_capture_active && now - endpoint_capture_started_ms >= 10000) {
+    finishEndpointCapture();
   }
-  if (right_voltage_v >= 0.3f && right_voltage_v <= 4.7f) {
-    capture_right_min_v = std::min(capture_right_min_v, right_voltage_v);
-    capture_right_max_v = std::max(capture_right_max_v, right_voltage_v);
-  }
-  if (now - endpoint_capture_started_ms >= 10000) finishEndpointCapture();
 }
 
 void sendJson(JsonDocument& document, int status = 200) {
@@ -222,91 +316,165 @@ void sendJson(JsonDocument& document, int status = 200) {
   web_server.send(status, "application/json; charset=utf-8", body);
 }
 
+void sendError(int status, const char* message) {
+  StaticJsonDocument<256> response;
+  response["ok"] = false;
+  response["error"] = message;
+  sendJson(response, status);
+}
+
+float nominalVoltageFromAngle(float angle_deg) {
+  return 0.5f + (angle_deg + 90.0f) * 4.0f / 180.0f;
+}
+
 void updateMeasurements() {
   const std::uint32_t now = millis();
   const float delta_seconds = last_sample_ms == 0
       ? 0.02f
       : static_cast<float>(now - last_sample_ms) / 1000.0f;
   last_sample_ms = now;
-  PairConfig pair_config;
-  pair_config.x_m = app_config.wheelbase_m + app_config.front_pair_offset_m;
-  pair_config.pivot_spacing_m = app_config.pivot_spacing_m;
-  pair_config.contact_length_m = app_config.contact_length_m;
-  pair_config.arm_direction = app_config.arm_direction;
 
-  float left_voltage = 0.0f;
-  float right_voltage = 0.0f;
+  float voltages[kSensorChannelCount];
+  for (float& voltage : voltages) voltage = NAN;
+
 #if PALPEUR_SIMULATION
+  // Rang droit ; la machine serpente lentement : décalage ±3,5 cm et lacet
+  // ±0,7° autour du milieu des deux stations de paires.
   simulation_phase += delta_seconds;
-  CircularObjectScenario scenario;
-  scenario.pair = pair_config;
-  scenario.diameter_m = app_config.object_diameter_m;
-  scenario.row_y_at_pair_m = 0.035f * std::sin(simulation_phase * 0.32f);
-  scenario.row_slope = std::tan(0.035f * std::sin(simulation_phase * 0.18f));
-  const SimulatedContact simulated = simulateCircularObjectContact(scenario);
-  if (simulated.valid) {
-    left_voltage = 0.5f + (simulated.input.left_angle_deg + 90.0f) * 4.0f / 180.0f;
-    right_voltage = 0.5f + (simulated.input.right_angle_deg + 90.0f) * 4.0f / 180.0f;
-  } else {
-    left_voltage = NAN;
-    right_voltage = NAN;
+  const float front_x = pairConfig(kFront).x_m;
+  const float rear_x = pairConfig(kRear).x_m;
+  const float middle_x = (front_x + rear_x) / 2.0f;
+  const float row_y_at_middle_m = 0.035f * std::sin(simulation_phase * 0.32f);
+  const float row_slope = std::tan(0.012f * std::sin(simulation_phase * 0.18f));
+  for (int pair = 0; pair < kPairCount; ++pair) {
+    if (!app_config.pair_enabled[pair]) continue;
+    CircularObjectScenario scenario;
+    scenario.pair = pairConfig(pair);
+    scenario.diameter_m = app_config.object_diameter_m;
+    scenario.row_y_at_pair_m = row_y_at_middle_m +
+                               row_slope * (scenario.pair.x_m - middle_x);
+    scenario.row_slope = row_slope;
+    const SimulatedContact simulated = simulateCircularObjectContact(scenario);
+    if (simulated.valid) {
+      voltages[sensorOf(pair, kLeft)] =
+          nominalVoltageFromAngle(simulated.input.left_angle_deg);
+      voltages[sensorOf(pair, kRight)] =
+          nominalVoltageFromAngle(simulated.input.right_angle_deg);
+    }
   }
 #else
-  left_voltage = readLeftSensorVoltage();
-  right_voltage = readRightSensorVoltage();
+  for (int index = 0; index < kSensorChannelCount; ++index) {
+    if (sensorEnabled(index)) voltages[index] = readSensorVoltage(index);
+  }
 #endif
 
-  recordCalibrationSample(left_voltage, right_voltage, now);
+  recordCalibrationSample(voltages, now);
 
-  runtime_state.left = left_channel->update(left_voltage, delta_seconds);
-  runtime_state.right = right_channel->update(right_voltage, delta_seconds);
-  PairInput pair_input;
-  pair_input.left_angle_deg = runtime_state.left.filtered_angle_deg;
-  pair_input.right_angle_deg = runtime_state.right.filtered_angle_deg;
-  pair_input.left_contact = runtime_state.left.contact;
-  pair_input.right_contact = runtime_state.right.contact;
-  pair_input.left_sensor_valid = runtime_state.left.valid;
-  pair_input.right_sensor_valid = runtime_state.right.valid;
-  pair_input.calibration_valid = left_calibration.calibrated &&
-                                 right_calibration.calibrated;
-
-  if (app_config.estimator == 2) {
-    runtime_state.pair = BisectorEstimator().estimate(pair_config, pair_input);
-  } else {
-    runtime_state.pair = ContactPointEstimator().estimate(pair_config, pair_input);
+  for (int index = 0; index < kSensorChannelCount; ++index) {
+    SensorState& sensor = sensors[index];
+    if (!sensorEnabled(index)) {
+      sensor.reading = SensorChannelReading{};
+      sensor.channel->reset();
+      continue;
+    }
+    sensor.reading = sensor.channel->update(voltages[index], delta_seconds);
   }
+
+  for (int pair = 0; pair < kPairCount; ++pair) {
+    const PairConfig config = pairConfig(pair);
+    PairEstimate& estimate = runtime_state.pairs[pair];
+    if (!app_config.pair_enabled[pair]) {
+      estimate = PairEstimate{};
+      estimate.x_m = config.x_m;
+      estimate.reason = InvalidReason::PairDisabled;
+      continue;
+    }
+    const SensorState& left = sensors[sensorOf(pair, kLeft)];
+    const SensorState& right = sensors[sensorOf(pair, kRight)];
+    PairInput input;
+    input.left_angle_deg = left.reading.filtered_angle_deg;
+    input.right_angle_deg = right.reading.filtered_angle_deg;
+    input.left_contact = left.reading.contact;
+    input.right_contact = right.reading.contact;
+    input.left_sensor_valid = left.reading.valid;
+    input.right_sensor_valid = right.reading.valid;
+    input.calibration_valid = left.calibration.calibrated &&
+                              right.calibration.calibrated;
+    estimate = app_config.estimator == 2
+        ? BisectorEstimator().estimate(config, input)
+        : ContactPointEstimator().estimate(config, input);
+    runtime_state.raw_row_y_m[pair] = estimate.row_y_m;
+    if (estimate.valid) estimate.row_y_m -= app_config.center_bias_m[pair];
+  }
+
+  runtime_state.pose = estimateRowPose(vehicleGeometry(),
+                                       runtime_state.pairs[kRear],
+                                       runtime_state.pairs[kFront]);
   ++runtime_state.sequence;
 }
 
+void fillSensorJson(JsonObject object, const SensorState& sensor) {
+  setNumber(object, "voltage_v", sensor.reading.voltage_v);
+  setNumber(object, "angle_raw_deg", sensor.reading.raw_angle_deg);
+  setNumber(object, "angle_filtered_deg", sensor.reading.filtered_angle_deg);
+  object["contact"] = sensor.reading.contact;
+  object["fault"] = !sensor.reading.valid;
+}
+
+void fillPairJson(JsonObject object, int pair) {
+  const PairEstimate& estimate = runtime_state.pairs[pair];
+  object["enabled"] = app_config.pair_enabled[pair];
+  object["valid"] = estimate.valid;
+  object["reason"] = reasonName(estimate.reason);
+  setNumber(object, "x_m", estimate.x_m);
+  setNumber(object, "row_y_m", estimate.valid ? estimate.row_y_m : NAN);
+  setNumber(object, "apparent_width_m",
+            estimate.valid ? estimate.apparent_width_m : NAN);
+  fillSensorJson(object["left"].to<JsonObject>(), sensors[sensorOf(pair, kLeft)]);
+  fillSensorJson(object["right"].to<JsonObject>(), sensors[sensorOf(pair, kRight)]);
+}
+
 void handleState() {
-  StaticJsonDocument<1024> document;
+  DynamicJsonDocument document(3072);
   document["timestamp_ms"] = millis();
   document["sequence"] = runtime_state.sequence;
   document["simulation"] = runtime_state.simulated;
-  JsonObject front = document["front_pair"].to<JsonObject>();
-  front["enabled"] = true;
-  front["valid"] = runtime_state.pair.valid;
-  front["reason"] = runtime_state.pair.valid ? "none" : "invalid";
-  JsonObject left = front["left"].to<JsonObject>();
-  left["voltage_v"] = runtime_state.left.voltage_v;
-  left["angle_raw_deg"] = runtime_state.left.raw_angle_deg;
-  left["angle_filtered_deg"] = runtime_state.left.filtered_angle_deg;
-  left["contact"] = runtime_state.left.contact;
-  left["fault"] = !runtime_state.left.valid;
-  JsonObject right = front["right"].to<JsonObject>();
-  right["voltage_v"] = runtime_state.right.voltage_v;
-  right["angle_raw_deg"] = runtime_state.right.raw_angle_deg;
-  right["angle_filtered_deg"] = runtime_state.right.filtered_angle_deg;
-  right["contact"] = runtime_state.right.contact;
-  right["fault"] = !runtime_state.right.valid;
-  JsonObject pose = document["pose"].to<JsonObject>();
-  pose["lateral_offset_m"] = runtime_state.pair.valid
-      ? -runtime_state.pair.row_y_m + app_config.center_bias_m
-      : 0.0f;
-  pose["lateral_valid"] = runtime_state.pair.valid;
-  pose["heading_deg"] = nullptr;
-  pose["heading_valid"] = false;
-  pose["estimated"] = runtime_state.pair.estimated;
+  document["active_pairs"] = activePairsName();
+  fillPairJson(document["front_pair"].to<JsonObject>(), kFront);
+  fillPairJson(document["rear_pair"].to<JsonObject>(), kRear);
+
+  // Décalage principal : centre d'empattement si les deux paires sont valides
+  // (cap disponible), sinon décalage local à la station de la paire valide.
+  const RowPose& pose = runtime_state.pose;
+  JsonObject pose_json = document["pose"].to<JsonObject>();
+  pose_json["lateral_valid"] = pose.lateral_valid;
+  pose_json["heading_valid"] = pose.heading_valid;
+  pose_json["estimated"] = false;
+  pose_json["reason"] = reasonName(pose.reason);
+  if (pose.heading_valid) {
+    pose_json["lateral_offset_m"] = pose.offset_wheelbase_center_m;
+    pose_json["lateral_reference"] = "wheelbase_center";
+    pose_json["lateral_reference_x_m"] = app_config.wheelbase_m / 2.0f;
+    pose_json["heading_deg"] = pose.heading_deg;
+    JsonObject offsets = pose_json["offsets"].to<JsonObject>();
+    offsets["rear_axle_m"] = pose.offset_rear_axle_m;
+    offsets["wheelbase_center_m"] = pose.offset_wheelbase_center_m;
+    offsets["front_axle_m"] = pose.offset_front_axle_m;
+  } else if (pose.lateral_valid) {
+    const bool front_valid = runtime_state.pairs[kFront].valid;
+    pose_json["lateral_offset_m"] = pose.offset_at_valid_pair_m;
+    pose_json["lateral_reference"] = front_valid ? "front_pair" : "rear_pair";
+    pose_json["lateral_reference_x_m"] = pose.valid_pair_x_m;
+    pose_json["heading_deg"] = nullptr;
+    pose_json["offsets"] = nullptr;
+  } else {
+    pose_json["lateral_offset_m"] = nullptr;
+    pose_json["lateral_reference"] = nullptr;
+    pose_json["lateral_reference_x_m"] = nullptr;
+    pose_json["heading_deg"] = nullptr;
+    pose_json["offsets"] = nullptr;
+  }
+
   JsonObject can = document["can"].to<JsonObject>();
   can["enabled"] = false;
   can["state"] = "disabled";
@@ -315,201 +483,261 @@ void handleState() {
 
 void handleConfig() {
   StaticJsonDocument<1024> document;
+  document["activePairs"] = activePairsName();
   document["wheelbase"] = app_config.wheelbase_m;
   document["pivotSpacing"] = app_config.pivot_spacing_m;
   document["armLength"] = app_config.arm_length_m;
   document["contactLength"] = app_config.contact_length_m;
-  document["frontOffset"] = app_config.front_pair_offset_m;
+  document["frontOffset"] = app_config.pair_offset_m[kFront];
+  document["rearOffset"] = app_config.pair_offset_m[kRear];
+  document["frontArmDirection"] = app_config.arm_direction[kFront] > 0 ? "forward" : "backward";
+  document["rearArmDirection"] = app_config.arm_direction[kRear] > 0 ? "forward" : "backward";
   document["trackWidth"] = app_config.track_width_m;
   document["contactThreshold"] = app_config.contact_threshold_deg;
   document["hysteresis"] = app_config.contact_hysteresis_deg;
   document["medianWindow"] = app_config.median_window;
   document["publishRate"] = app_config.publish_rate_hz;
-  document["armDirection"] = app_config.arm_direction > 0 ? "forward" : "backward";
   document["estimator"] = app_config.estimator == 2 ? "v2" : "v1";
   sendJson(document);
 }
 
 void handleCalibrationState() {
-  StaticJsonDocument<512> document;
-  document["neutral_left"] = left_neutral_captured;
-  document["neutral_right"] = right_neutral_captured;
-  document["endpoints"] = endpoints_captured;
-  document["center"] = center_captured;
+  DynamicJsonDocument document(2048);
+  JsonObject sensors_json = document["sensors"].to<JsonObject>();
+  for (int index = 0; index < kSensorChannelCount; ++index) {
+    const SensorState& sensor = sensors[index];
+    JsonObject item = sensors_json[kSensorNames[index]].to<JsonObject>();
+    item["enabled"] = sensorEnabled(index);
+    item["neutral"] = sensor.neutral_captured;
+    item["neutral_v"] = sensor.calibration.voltage_neutral_v;
+    item["endpoints"] = sensor.endpoints_captured;
+    item["min_v"] = sensor.calibration.voltage_min_v;
+    item["max_v"] = sensor.calibration.voltage_max_v;
+    item["calibrated"] = sensor.calibration.calibrated;
+  }
+  JsonObject center = document["center"].to<JsonObject>();
+  center["front"] = center_captured[kFront];
+  center["rear"] = center_captured[kRear];
   document["capturing_endpoints"] = endpoint_capture_active;
   document["capture_remaining_ms"] = endpoint_capture_active
       ? 10000 - std::min<std::uint32_t>(10000, millis() - endpoint_capture_started_ms)
       : 0;
-  document["calibrated"] = left_neutral_captured && right_neutral_captured &&
-                            endpoints_captured && left_calibration.calibrated &&
-                            right_calibration.calibrated;
-  document["left_neutral_v"] = left_calibration.voltage_neutral_v;
-  document["right_neutral_v"] = right_calibration.voltage_neutral_v;
+  document["calibrated"] = calibrationComplete();
   sendJson(document);
+}
+
+int sensorFromCaptureName(const char* name) {
+  static const char kPrefix[] = "neutral_";
+  if (std::strncmp(name, kPrefix, sizeof(kPrefix) - 1) != 0) return -1;
+  const char* sensor_name = name + sizeof(kPrefix) - 1;
+  for (int index = 0; index < kSensorChannelCount; ++index) {
+    if (std::strcmp(sensor_name, kSensorNames[index]) == 0) return index;
+  }
+  return -1;
 }
 
 void handleCalibrationCapture() {
   StaticJsonDocument<256> request;
   if (deserializeJson(request, web_server.arg("plain"))) {
-    web_server.send(400, "application/json", "{\"ok\":false,\"error\":\"JSON invalide\"}");
+    sendError(400, "JSON invalide");
     return;
   }
   const char* name = request["name"] | "";
-  if (strcmp(name, "neutral_left") == 0 || strcmp(name, "neutral_right") == 0) {
+  const int sensor_index = sensorFromCaptureName(name);
+  if (sensor_index >= 0) {
+    if (!sensorEnabled(sensor_index)) {
+      sendError(409, "Capteur d'une paire désactivée");
+      return;
+    }
     if (voltage_history_count < kCalibrationWindowSize) {
-      web_server.send(409, "application/json", "{\"ok\":false,\"error\":\"Attendre deux secondes de mesures stables\"}");
+      sendError(409, "Attendre deux secondes de mesures stables");
       return;
     }
+    SensorState& sensor = sensors[sensor_index];
     float mean_voltage_v = 0.0f;
-    const float* samples = strcmp(name, "neutral_left") == 0
-        ? left_voltage_history.data()
-        : right_voltage_history.data();
-    if (!captureStableVoltage(samples, kCalibrationWindowSize, 0.12f,
-                              mean_voltage_v)) {
-      web_server.send(409, "application/json", "{\"ok\":false,\"error\":\"Mesure instable ou hors plage\"}");
+    if (!captureStableVoltage(sensor.history.data(), kCalibrationWindowSize,
+                              0.12f, mean_voltage_v)) {
+      sendError(409, "Mesure instable ou hors plage");
       return;
     }
-    if (strcmp(name, "neutral_left") == 0) {
-      left_calibration.voltage_neutral_v = mean_voltage_v;
-      left_neutral_captured = true;
-    } else {
-      right_calibration.voltage_neutral_v = mean_voltage_v;
-      right_neutral_captured = true;
-    }
+    sensor.calibration.voltage_neutral_v = mean_voltage_v;
+    sensor.neutral_captured = true;
     updateCalibrationValidity();
-    persistCalibration();
-  } else if (strcmp(name, "endpoints") == 0) {
+  } else if (std::strcmp(name, "endpoints") == 0) {
+    // Balayage simultané de tous les bras des paires actives pendant 10 s.
     endpoint_capture_active = true;
-    endpoints_captured = false;
     endpoint_capture_started_ms = millis();
-    capture_left_min_v = 4.7f;
-    capture_left_max_v = 0.3f;
-    capture_right_min_v = 4.7f;
-    capture_right_max_v = 0.3f;
+    for (int index = 0; index < kSensorChannelCount; ++index) {
+      if (!sensorEnabled(index)) continue;
+      sensors[index].endpoints_captured = false;
+      sensors[index].capture_min_v = 4.7f;
+      sensors[index].capture_max_v = 0.3f;
+    }
     updateCalibrationValidity();
     persistCalibration();
-    web_server.send(202, "application/json", "{\"ok\":true,\"capturing\":true,\"duration_ms\":10000}");
+    StaticJsonDocument<128> response;
+    response["ok"] = true;
+    response["capturing"] = true;
+    response["duration_ms"] = 10000;
+    sendJson(response, 202);
     return;
-  } else if (strcmp(name, "center") == 0) {
-    if (!runtime_state.pair.valid) {
-      web_server.send(409, "application/json", "{\"ok\":false,\"error\":\"Paire invalide\"}");
-      return;
+  } else if (std::strcmp(name, "center") == 0) {
+    // Machine centrée et alignée dans un rang de référence : chaque paire
+    // active doit être valide. Avec deux paires, cela remet aussi le cap à zéro.
+    for (int pair = 0; pair < kPairCount; ++pair) {
+      if (app_config.pair_enabled[pair] && !runtime_state.pairs[pair].valid) {
+        sendError(409, pair == kFront ? "Paire avant invalide" : "Paire arrière invalide");
+        return;
+      }
     }
-    app_config.center_bias_m = runtime_state.pair.row_y_m;
-    center_captured = true;
-    preferences.putFloat("center", app_config.center_bias_m);
-    preferences.putBool("center_set", true);
+    for (int pair = 0; pair < kPairCount; ++pair) {
+      if (!app_config.pair_enabled[pair]) continue;
+      app_config.center_bias_m[pair] = runtime_state.raw_row_y_m[pair];
+      center_captured[pair] = true;
+    }
+    preferences.putFloat("center", app_config.center_bias_m[kFront]);
+    preferences.putFloat("center_r", app_config.center_bias_m[kRear]);
   } else {
-    web_server.send(400, "application/json", "{\"ok\":false,\"error\":\"Étape inconnue\"}");
+    sendError(400, "Étape inconnue");
     return;
   }
   persistCalibration();
-  recreateChannels();
   web_server.send(200, "application/json", "{\"ok\":true}");
 }
 
 void handleCalibrationReset() {
-  left_calibration = SensorCalibration{};
-  right_calibration = SensorCalibration{};
-  left_neutral_captured = false;
-  right_neutral_captured = false;
-  endpoints_captured = false;
-  center_captured = false;
+  for (int index = 0; index < kSensorChannelCount; ++index) {
+    sensors[index].calibration = SensorCalibration{};
+    sensors[index].neutral_captured = false;
+    sensors[index].endpoints_captured = false;
+    preferences.remove(sensorKey(index, "min"));
+    preferences.remove(sensorKey(index, "neu"));
+    preferences.remove(sensorKey(index, "max"));
+  }
+  for (int pair = 0; pair < kPairCount; ++pair) {
+    center_captured[pair] = false;
+    app_config.center_bias_m[pair] = 0.0f;
+  }
   endpoint_capture_active = false;
   voltage_history_count = 0;
-  app_config.center_bias_m = 0.0f;
-  preferences.remove("l_min");
-  preferences.remove("l_neutral");
-  preferences.remove("l_max");
-  preferences.remove("r_min");
-  preferences.remove("r_neutral");
-  preferences.remove("r_max");
-  preferences.putBool("l_valid", false);
-  preferences.putBool("r_valid", false);
-  preferences.putBool("ln_set", false);
-  preferences.putBool("rn_set", false);
-  preferences.putBool("endpoints", false);
-  preferences.putBool("center_set", false);
   preferences.putFloat("center", 0.0f);
-#if PALPEUR_SIMULATION
-  left_calibration.calibrated = true;
-  right_calibration.calibrated = true;
-#endif
-  recreateChannels();
+  preferences.putFloat("center_r", 0.0f);
+  updateCalibrationValidity();
+  persistCalibration();
   web_server.send(200, "application/json", "{\"ok\":true}");
 }
 
+bool parseDirection(JsonVariantConst value, int& direction) {
+  const char* text = value | "";
+  if (std::strcmp(text, "forward") == 0) {
+    direction = 1;
+    return true;
+  }
+  if (std::strcmp(text, "backward") == 0) {
+    direction = -1;
+    return true;
+  }
+  return false;
+}
+
 void handleConfigUpdate() {
-  StaticJsonDocument<1024> request;
+  StaticJsonDocument<1536> request;
   if (deserializeJson(request, web_server.arg("plain"))) {
-    StaticJsonDocument<128> response;
-    response["ok"] = false;
-    response["error"] = "JSON invalide";
-    sendJson(response, 400);
+    sendError(400, "JSON invalide");
     return;
   }
   JsonObjectConst values = request["config"].as<JsonObjectConst>();
   if (values.isNull()) values = request.as<JsonObjectConst>();
+
+  // On valide sur une copie : rien n'est appliqué si un seul champ est refusé.
+  AppConfig next = app_config;
   float numeric = 0.0f;
-  if (values.containsKey("armLength")) {
-    if (!validNumber(values["armLength"], 0.1f, 1.2f, numeric)) return web_server.send(400, "application/json", "{\"ok\":false,\"error\":\"armLength invalide\"}");
-    app_config.arm_length_m = numeric;
-  }
-  if (values.containsKey("pivotSpacing")) {
-    if (!validNumber(values["pivotSpacing"], 0.3f, 1.2f, numeric)) return web_server.send(400, "application/json", "{\"ok\":false,\"error\":\"pivotSpacing invalide\"}");
-    app_config.pivot_spacing_m = numeric;
-  }
-  if (values.containsKey("contactLength")) {
-    if (!validNumber(values["contactLength"], 0.1f, 1.2f, numeric)) return web_server.send(400, "application/json", "{\"ok\":false,\"error\":\"contactLength invalide\"}");
-    app_config.contact_length_m = numeric;
-  }
-  if (values.containsKey("frontOffset")) {
-    if (!validNumber(values["frontOffset"], -1.5f, 1.5f, numeric)) return web_server.send(400, "application/json", "{\"ok\":false,\"error\":\"frontOffset invalide\"}");
-    app_config.front_pair_offset_m = numeric;
-  }
-  if (values.containsKey("trackWidth")) {
-    if (!validNumber(values["trackWidth"], 0.5f, 3.0f, numeric)) return web_server.send(400, "application/json", "{\"ok\":false,\"error\":\"trackWidth invalide\"}");
-    app_config.track_width_m = numeric;
-  }
-  if (values.containsKey("contactThreshold")) {
-    if (!validNumber(values["contactThreshold"], 1.0f, 30.0f, numeric)) return web_server.send(400, "application/json", "{\"ok\":false,\"error\":\"contactThreshold invalide\"}");
-    app_config.contact_threshold_deg = numeric;
-  }
-  if (values.containsKey("hysteresis")) {
-    if (!validNumber(values["hysteresis"], 0.0f, 10.0f, numeric)) return web_server.send(400, "application/json", "{\"ok\":false,\"error\":\"hysteresis invalide\"}");
-    app_config.contact_hysteresis_deg = numeric;
+  struct FloatField {
+    const char* name;
+    float minimum;
+    float maximum;
+    float* target;
+  };
+  const FloatField float_fields[] = {
+      {"wheelbase", 2.0f, 6.0f, &next.wheelbase_m},
+      {"armLength", 0.1f, 1.2f, &next.arm_length_m},
+      {"pivotSpacing", 0.3f, 1.2f, &next.pivot_spacing_m},
+      {"contactLength", 0.1f, 1.2f, &next.contact_length_m},
+      {"frontOffset", -1.5f, 1.5f, &next.pair_offset_m[kFront]},
+      {"rearOffset", -1.5f, 1.5f, &next.pair_offset_m[kRear]},
+      {"trackWidth", 0.5f, 3.0f, &next.track_width_m},
+      {"contactThreshold", 1.0f, 30.0f, &next.contact_threshold_deg},
+      {"hysteresis", 0.0f, 10.0f, &next.contact_hysteresis_deg},
+  };
+  for (const FloatField& field : float_fields) {
+    if (!values.containsKey(field.name)) continue;
+    if (!validNumber(values[field.name], field.minimum, field.maximum, numeric)) {
+      char message[64];
+      std::snprintf(message, sizeof(message), "%s invalide", field.name);
+      sendError(400, message);
+      return;
+    }
+    *field.target = numeric;
   }
   if (values.containsKey("medianWindow")) {
     const int window = values["medianWindow"].as<int>();
-    if (window < 3 || window > 21 || window % 2 == 0) return web_server.send(400, "application/json", "{\"ok\":false,\"error\":\"medianWindow invalide\"}");
-    app_config.median_window = window;
+    if (window < 3 || window > 21 || window % 2 == 0) return sendError(400, "medianWindow invalide");
+    next.median_window = window;
   }
   if (values.containsKey("publishRate")) {
     const int rate = values["publishRate"].as<int>();
-    if (rate < 5 || rate > 200) return web_server.send(400, "application/json", "{\"ok\":false,\"error\":\"publishRate invalide\"}");
-    app_config.publish_rate_hz = rate;
+    if (rate < 5 || rate > 200) return sendError(400, "publishRate invalide");
+    next.publish_rate_hz = rate;
   }
-  if (values.containsKey("armDirection")) {
-    const char* direction = values["armDirection"] | "forward";
-    if (strcmp(direction, "forward") != 0 && strcmp(direction, "backward") != 0) return web_server.send(400, "application/json", "{\"ok\":false,\"error\":\"armDirection invalide\"}");
-    app_config.arm_direction = strcmp(direction, "forward") == 0 ? 1 : -1;
+  if (values.containsKey("frontArmDirection") &&
+      !parseDirection(values["frontArmDirection"], next.arm_direction[kFront])) {
+    return sendError(400, "frontArmDirection invalide");
+  }
+  if (values.containsKey("rearArmDirection") &&
+      !parseDirection(values["rearArmDirection"], next.arm_direction[kRear])) {
+    return sendError(400, "rearArmDirection invalide");
   }
   if (values.containsKey("estimator")) {
-    const char* estimator = values["estimator"] | "v1";
-    if (strcmp(estimator, "v1") != 0 && strcmp(estimator, "v2") != 0) return web_server.send(400, "application/json", "{\"ok\":false,\"error\":\"estimator invalide\"}");
-    app_config.estimator = strcmp(estimator, "v2") == 0 ? 2 : 1;
+    const char* estimator = values["estimator"] | "";
+    if (std::strcmp(estimator, "v1") != 0 && std::strcmp(estimator, "v2") != 0) return sendError(400, "estimator invalide");
+    next.estimator = std::strcmp(estimator, "v2") == 0 ? 2 : 1;
+  }
+  if (values.containsKey("activePairs")) {
+    const char* active = values["activePairs"] | "";
+    if (std::strcmp(active, "front") == 0) {
+      next.pair_enabled[kFront] = true;
+      next.pair_enabled[kRear] = false;
+    } else if (std::strcmp(active, "rear") == 0) {
+      next.pair_enabled[kFront] = false;
+      next.pair_enabled[kRear] = true;
+    } else if (std::strcmp(active, "both") == 0) {
+      next.pair_enabled[kFront] = true;
+      next.pair_enabled[kRear] = true;
+    } else {
+      return sendError(400, "activePairs invalide (front, rear ou both)");
+    }
+  }
+  // Les deux stations doivent rester distinctes pour calculer un cap.
+  if (next.wheelbase_m + next.pair_offset_m[kFront] - next.pair_offset_m[kRear] < 0.5f) {
+    return sendError(400, "Paires avant et arrière trop proches");
   }
 
+  app_config = next;
+  preferences.putFloat("wheelbase", app_config.wheelbase_m);
   preferences.putFloat("arm_len", app_config.arm_length_m);
   preferences.putFloat("spacing", app_config.pivot_spacing_m);
   preferences.putFloat("contact", app_config.contact_length_m);
-  preferences.putFloat("front_off", app_config.front_pair_offset_m);
+  preferences.putFloat("front_off", app_config.pair_offset_m[kFront]);
+  preferences.putFloat("rear_off", app_config.pair_offset_m[kRear]);
+  preferences.putInt("arm_dir", app_config.arm_direction[kFront]);
+  preferences.putInt("arm_dir_r", app_config.arm_direction[kRear]);
+  preferences.putBool("front_en", app_config.pair_enabled[kFront]);
+  preferences.putBool("rear_en", app_config.pair_enabled[kRear]);
   preferences.putFloat("track", app_config.track_width_m);
   preferences.putFloat("threshold", app_config.contact_threshold_deg);
   preferences.putFloat("hyst", app_config.contact_hysteresis_deg);
   preferences.putInt("median", app_config.median_window);
   preferences.putInt("rate", app_config.publish_rate_hz);
-  preferences.putInt("arm_dir", app_config.arm_direction);
   preferences.putInt("estimator", app_config.estimator);
   recreateChannels();
   StaticJsonDocument<128> response;
@@ -580,7 +808,8 @@ void setup() {
   configureRoutes();
   web_server.begin();
   updateMeasurements();
-  Serial.printf("Palpeur TRAXX: http://%s/\n", WiFi.softAPIP().toString().c_str());
+  Serial.printf("Palpeur TRAXX: http://%s/ (paires: %s)\n",
+                WiFi.softAPIP().toString().c_str(), activePairsName());
 }
 
 void loop() {
